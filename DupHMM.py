@@ -189,9 +189,9 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, pois_lambda, states,
 			for i in range(m.start(),m.end()+1):
 				for (transposon_name, type) in tp_windows[i]:
 					tp_union_list.add((transposon_name, type))
+			transposable_elements = len([name for name, type in tp_union_list if type == 0])
+			transposable_element_genes = len([name for name, type in tp_union_list if type == 1])
 			if len(path_dict_exp_control_ratio.keys()) == 0: # Not using a control
-				transposable_elements = len([name for name, type in tp_union_list if type == 0])
-				transposable_element_genes = len([name for name, type in tp_union_list if type == 1])
 				all_outlines.append( (chr,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov, transposable_element_genes, transposable_elements) )
 			else: # Using a control
 				exp_control_ratio_avg = round(sum([float(path_dict_exp_control_ratio[win][chr][i]) for i in range(m.start(),m.end()+1)]) / (m.end() - m.start()), 2)
@@ -311,6 +311,8 @@ def prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 		total_reads = 0
 		for chr in chr_list:
 			for win in win_list:
+				import pdb # Delete me
+				pdb.set_trace() # Delete me
 				total_reads += sum([int(i) for i in path_dict[win][chr]])
 		
 		for chr in chr_list:
