@@ -1,5 +1,5 @@
 #!/usr/bin/env python3.2
-# Written by Matthew Porter @ UC Davis, Korf Lab
+# Written by Matthew Porter @ UC Davis, Korf and Comai Labs
 import argparse, re, os, subprocess, sys
 from collections import OrderedDict, Counter
 from math import exp, factorial, log, lgamma
@@ -18,7 +18,7 @@ def Command_line():
 	parser.add_argument('-sam', default="Data/Sue/sue1/single_bp_preprocess/set5/libSUE1_set5_aln_Aa_Filtered.sam.gz", type=str, help='SAM filename containing reads for the HMM to run on.', metavar='SAMFilename')
 	parser.add_argument('-csam', default="", type=str, help='SAM filename for an optional comparison data set. Duplications for a window will be called using the -sam SAM_filename, but a coverage ratio for that window (normalized for library size) relative to the -csam SAM_filename will be included in the results.', metavar='ComparisonSAM')
 	parser.add_argument('-gff', default="", type=str, help='GFF file for the reference genome. Used to annotate regions in the results which contain transposons. This makes spotting false positives easier (Default="../TAIR9_GFF3_genes_transposons.gff").', metavar='GFFFile')
-	parser.add_argument('-chr', default="All", type=str, help='Chromosome to run HMM on (Default=Run HMM on all chromosomes). To look at >1 chromosome but not all chromosomes, provide them in a semicolon-delimited format: e.g. "Chr1;Chr2"', metavar='Chromosome')
+	parser.add_argument('-chr', default="All", type=str, help='Chromosome to run HMM on (Default=Run HMM on all chromosomes). To look at >1 chromosome but not all chromosomes, provide them in a comma-delimited format: e.g. "Chr1,Chr2"', metavar='Chromosome')
 	parser.add_argument('-w', default="2500", type=str, help='Window size the HMM will use, in bps (Default=2500). To look at multiple windows, provide them in a comma-delimited format: e.g. "1000,2000,2500,3000".', metavar='Window')
 	parser.add_argument('-scn', default="1,2,5", type=str, help='Copy numbers for HMM states, separated by commas and listed in increasing numerical order (Default="1,2,5").', metavar='StateCopyNumbers')
 	parser.add_argument('-sn', default="S,D,H", type=str, help='Single character names corresponding to copy number HMM states, separated by commas and listed in increasing numerical order (Default="S,D,H", short for Single,Double,High).', metavar='StateNames')
@@ -26,7 +26,7 @@ def Command_line():
 	parser.add_argument('-trans', default=-50, type=float, help='Log probability for moving from same state->different state (Default=-50, Suggested:-50 or -100). Same State->Same State probability is unchangeable from 1.', metavar='TransitionProb')
 	parser.add_argument('-thr', default="10X,20X", type=str, help='Threshold value for read counts. If a window contains more reads than the threshold, the previous window\'s state and probability are copied to the read spike window, effectively ignoring read spikes. Multiple comma-separated values can be provided here for multiple re-runs, e.g. "100,200". Threshold can also be set relative to the lambda value for a 1X region, e.g. "10X,20X". Default="10X,20X"', metavar='ReadThreshold')
 	parser.add_argument('-o', default="Output/DupHMM_sue1_set5_AaFiltered", type=str, help='Output directory for HMM results (Default="Output/DupHMM_sue1_set5_AaFiltered")', metavar='OutputDir')
-	parser.add_argument('-R', default="", type=str, help="Directory where R is located. This only needs to be entered once, as the path is then saved in 'Rpath'", metavar='RPath')
+	parser.add_argument('-R', default="", type=str, help="Directory where R is located. This only needs to be entered once, as the path is then saved in 'Rpath.txt'. Your R installation needs to have the 'MASS' package installed.", metavar='RPath')
 	
 	args = parser.parse_args()
 	sam = args.sam
@@ -44,7 +44,7 @@ def Command_line():
 	if outdir[-1:] == "\"": outdir = outdir[:-1]
 	Rpath = args.R
 	if Rpath[-1:] == "\"": Rpath = Rpath[:-1]
-	#Rpath = r"/share/apps/R-2.14.2/bin/Rscript"
+	#Rpath = r"/share/apps/R-2.15.0/bin/Rscript"
 	#Rpath = r"C:/Program Files/R/R-2.15.0/bin/x64/Rscript.exe"
 	
 	# Determine the path for R installation
@@ -266,7 +266,7 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 			if match:
 				chr_list.append(chr_temp)
 	else:
-		chr_list = [entry for entry in chr.split(';')]
+		chr_list = [entry for entry in chr.split(',')]
 	
 	# Create HMM observation files (contains # of reads per window in sequential order) and reads-per-window histogram tables
 	hist_dict, path_dict = SAM_to_wincov(sam, win_list, chr_list, outdir, "False")
@@ -292,10 +292,10 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 					if "linux" in sys.platform:
 						params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save"])
 						simulation = subprocess.Popen(params, shell=True)
-					elif "win32" or "cygwin" in sys.platform:
+					elif sys.platform in ["win32","win64"]:
 						params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save --slave"])
 						simulation = subprocess.Popen(params)
-					elif "darwin" in sys.platform:
+					elif sys.platform in ["darwin", "os2", "os2emx"]:
 						# Copy-pasted from linux code block. Possibly different?
 						params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save"])
 						simulation = subprocess.Popen(params, shell=True)

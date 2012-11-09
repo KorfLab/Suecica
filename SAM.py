@@ -156,7 +156,8 @@ def Coverage_Window(sam_file, win_list, chr_list, control_use):
         chr = str(split_line[2])
         if chr not in chr_list: continue # Ignore if read does not map, or if mapped to a chromosome not analyzed (e.g. mito, chloro)
         quality = int(split_line[4])
-        if quality == 0: continue # Ignore reads with a quality of 0, aka those which do not map uniquely
+        #if quality == 0: continue # Ignore reads with a quality of 0, aka those which do not map uniquely
+        if quality < 20: continue # Ignore reads with a quality of 0, aka those which do not map uniquely, as well as low-quality mapping reads
         total_reads += 1
         spos = int(split_line[3])
         read_len = len(split_line[9])
@@ -207,7 +208,7 @@ def Coverage_Window(sam_file, win_list, chr_list, control_use):
                 hist_dict = {} # Only path_dict is used when control_use==True
     return(hist_dict, path_dict)
 
-def Reads_Histogram(filelist):
+def Read_Length_Hist(filelist):
     '''Outputs a histogram of read length in the given SAM files'''
     filelist = filelist.split(";")
     for filename in filelist:
@@ -237,8 +238,126 @@ def Reads_Histogram(filelist):
         with open(outfilename, 'w') as outfile:
             outfile.write(outline)
             outfile.write(outline2)
-    
-def Trim_Reads(filelist,threshold):
+
+def Read_Quality(filelist, qual_thr=20):
+    '''Outputs a histogram of read mapping qualities'''
+    filelist = filelist.split(";")
+    for filename in filelist:
+        print("Read mapping quality information for ", str(filename), ":", sep='')
+        
+        hist = Counter()
+        total_reads = 0
+        total_low_reads = 0
+        
+        gzipped = False
+        if filename[-3:] == ".gz":
+            infile = gzip.open(filename, 'rb')
+            gzipped = True
+        else:
+            infile = open(filename)
+        
+        for line in infile:
+            if gzipped == True: line = str(line, encoding='utf8')
+            splitlist = line.split()
+            if len(splitlist) > 9:
+                chr = str(splitlist[2])
+                if chr[:5] == "AtChr": # Don't care about A. lyrata scaffolds
+                    total_reads += 1
+                    quality = int(splitlist[4])
+                    if quality < qual_thr:
+                        total_low_reads += 1
+                    try:
+                        hist[quality] += 1
+                    except:
+                        hist[quality] = 1
+        
+        print("MapQuality\tCount")
+        for qual, count in sorted(hist.items()):
+            print(str(qual), "\t", str(count), sep='')
+        
+        print("\n\nTotal reads:\t\t", str(total_reads))
+        print("Total low mapping quality reads:\t", str(total_low_reads), " (", str(round(total_low_reads / total_reads * 100,2)), "%)", sep='')
+        
+def Read_Base_Quality(filelist, qual_thr=20):
+    '''Outputs a histogram of base qualities, the percentage of reads containing
+       low-quality bases, and the average number of low-quality bases observed
+       per read containing at least one low-quality base'''
+    filelist = filelist.split(";")
+    for filename in filelist:
+        print("Base quality information for ", str(filename), ":", sep='')
+        
+        hist = Counter()
+        total_reads = 0
+        total_low_reads = 0
+        total_low_read_low_base_count = 0
+        
+        gzipped = False
+        if filename[-3:] == ".gz":
+            infile = gzip.open(filename, 'rb')
+            gzipped = True
+        else:
+            infile = open(filename)
+        
+        for line in infile:
+            if gzipped == True: line = str(line, encoding='utf8')
+            is_low_read = False
+            splitlist = line.split()
+            if len(splitlist) > 10:
+                total_reads += 1
+                qualities = splitlist[10]
+                for c in qualities:
+                    c_qual = ord(c) - 33
+                    if c_qual < int(qual_thr):
+                        total_low_read_low_base_count += 1
+                        if is_low_read == False:
+                            is_low_read = True
+                            total_low_reads += 1
+                    try:
+                        hist[c_qual] += 1
+                    except:
+                        hist[c_qual] = 1
+        
+        print("Quality\tCount")
+        for qual, count in sorted(hist.items()):
+            print(str(qual), "\t", str(count), sep='')
+        
+        print("\n\nTotal reads:\t", str(total_reads))
+        print("Total low quality base-containing reads:\t", str(total_low_reads), " (", str(round(total_low_reads / total_reads * 100,2)), "%)", sep='')
+        print("Average number of low quality bases in each low quality base-containing read:\t", str(round(total_low_read_low_base_count / total_low_reads,2)), sep='')
+
+def Reads_Per_Gene(sam_file, gff_genes_dict):
+    ''' Returns a histogram of the number of reads mapped to each gene provided in gff_genes_dict.gene_dict
+        Must be provided with a GFF class, which will have gene_dict containing gene names as keys, and
+        (chr, start_pos, end_pos) as values, as well as gene_nuc_dict which specifies which gene corresponds
+        to a particular nucleotide'''
+    if sam_file[-3:] == ".gz":
+        infile = gzip.open(sam_file, 'rb')
+    else:
+        infile = open(sam_file)
+    gene_counter = Counter({gene: 0 for gene in gff_genes_dict.gene_dict.keys()})
+    for line in infile:
+        if sam_file[-3:] == ".gz": line = str(line, encoding='utf8')
+        split_line = line.split("\t")
+        if len(split_line) > 4:
+            chr = str(split_line[2])
+            quality = int(split_line[4])
+            if quality < 20: continue # Ignore reads with a quality of 0, aka those which do not map uniquely, as well as low-quality mapping reads
+            spos = int(split_line[3])
+            read_len = len(split_line[9])
+            epos = spos + read_len
+            for i in range(spos, epos+1):
+                if (chr, i) in gff_genes_dict.gene_nuc_dict.keys():
+                    gene_counter[gff_genes_dict.gene_nuc_dict[(chr,i)]] += 1
+                    break
+            #for gene_name, [gene_chr, start_pos, end_pos] in gff_genes_dict.gene_dict.items():
+            #    if chr == gene_chr:
+            #        if (spos >= start_pos and spos <= end_pos) or (epos >= start_pos and epos <= end_pos):
+            #            gene_counter[gene_name] += 1
+            #            break
+    infile.close()
+    return(gene_counter)
+
+def Trim_Reads(filelist, threshold):
     '''Trims a list of SAM files based on a minimum length threshold'''
     filelist = filelist.split(";")
     for filename in filelist:

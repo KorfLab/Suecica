@@ -1,5 +1,6 @@
 #!/usr/bin/env python3.2
-import re, argparse, win32clipboard
+import re, argparse
+from sys import platform
 
 def command_line():
 	parser = argparse.ArgumentParser(description="DupsToClipboard.py opens a results file produced by DupHMM.py and copies all duplication \
@@ -25,9 +26,24 @@ with open(i_fn) as infile:
 				if int(TE_genes) == 1: outline = outline[:-2] + ")"
 				dups.append(outline)
 
-cliptext = '\r\n'.join(dups)
+if platform in ["win32","win64"]: # Windows
+	cliptext = '\r\n'.join(dups)
+	import win32clipboard
+	win32clipboard.OpenClipboard()
+	win32clipboard.EmptyClipboard()
+	win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT,cliptext)
+	win32clipboard.CloseClipboard()
+else: # Linux and Mac
+	cliptext = '\n'.join(dups)
+	from subprocess import Popen, PIPE
+	if "linux" in platform: # Linux
+		xsel_proc = Popen(['xsel', '-pi'], stdin=PIPE)
+		xsel_proc.communicate(bytearray(cliptext,"UTF-8"))
+		xsel_proc = Popen(['xsel', '-bi'], stdin=PIPE)
+		xsel_proc.communicate(bytearray(cliptext,"UTF-8"))
+	elif platform in ["darwin", "os2", "os2emx"]: # Mac
+		# Untested
+		outtext = popen("pbcopy", "w")
+		outtext.write(cliptext)
+		outtext.close()
 print(cliptext)
-win32clipboard.OpenClipboard()
-win32clipboard.EmptyClipboard()
-win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT,cliptext)
-win32clipboard.CloseClipboard()
