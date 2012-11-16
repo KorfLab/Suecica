@@ -7,7 +7,7 @@ import SAM
 
 # DupHMM.py runs a duplication-finding HMM on a SAM file. The SAM file is first broken up into user-specified window sizes,
 #	  reads mapping per-window counted, and a Poisson regression is performed on the resulting histogram of count data. This Poisson lambda
-#	  value is used to generate a HMM parameter file, which the duplication searching HMM then uses.
+#	  value is then used to generate a HMM parameter file, which the duplication searching HMM then uses to identify duplicated windows.
 
 def Command_line():
 	parser = argparse.ArgumentParser(description="DupHMM.py runs a duplication-finding HMM on a SAM file. The SAM file is first broken up into user-specified window sizes, \
@@ -61,6 +61,8 @@ def Command_line():
 
 def Dist_to_params(states, pois_lambda, trans_prob, t_count, hist, win, chr, sam, outdir):
 	# Distribution_to_parameters_file
+	# Converts per-window read count histogram with a Poisson fit to it into
+	# parameters that an HMM can utilize
 	
 	# Calculating emission probabilities for X-fold copy states based on Poisson probabilities
 	prob_dict = {}
@@ -73,16 +75,19 @@ def Dist_to_params(states, pois_lambda, trans_prob, t_count, hist, win, chr, sam
 		prob_list = []
 		for k in range(0,max_value+1):
 			mu = pois_lambda*copy_num
-			#nonlogprob = exp(-mu) * mu**k / factorial(k) # Fails when k is too large. Must be handled in log-space
-			prob = exp(k*log(mu)-lgamma(k+1) - mu) # Above equation handled in log-space
-			if prob == 0 and j == len(states.keys())-1: # Maximum non-zero probability for highest copy-number state
+			#nonlogprob = exp(-mu) * mu**k / factorial(k)	# Fails when k is too large. Must be handled in log-space
+			prob = exp(k*log(mu)-lgamma(k+1) - mu)			# Above equation handled in log-space
+			if prob == 0 and j == len(states.keys())-1:
+				# Find the maximum non-zero probability for highest copy-number state
 				left_tailed = True
 				for entry in prob_list: # Check to make sure this isn't a left-tailed 0
 					if entry != 0:
 						left_tailed = False
 						break
-				if left_tailed == False: # Not a left-tailed 0, so stop calculating Poisson values beyond this k value
-					max_value = t_count = k-1 # Want to next remove count values for lower copy number states where it is guaranteed that P=0
+				if left_tailed == False:
+					# Not a left-tailed 0, so stop calculating Poisson values beyond this maximum non-zero probability
+					# Want to next remove count values for lower copy number states where it is guaranteed that P=0
+					max_value = t_count = k-1
 					break
 			prob_list.append(prob)
 		prob_dict[copy_num] = prob_list
@@ -95,9 +100,11 @@ def Dist_to_params(states, pois_lambda, trans_prob, t_count, hist, win, chr, sam
 	for copy_num in states.keys():
 		prob_dict[copy_num] = {i: prob_dict[copy_num][i] for i in range(0,t_count+1)}
 		i += 1
-		if i == len(states.keys()) - 1: break # Do not need to re-trim highest copy-number state
+		# Do not need to re-trim highest copy-number state
+		if i == len(states.keys()) - 1: break
 		
 	# Create parameter file
+	# Call Dist_to_params_outline to create the line of text to be written out
 	outline = Dist_to_params_outline(states, trans_prob, prob_dict)
 	t_outdir = os.path.join(outdir,str(win) + "bp-window/" + str(t_count) + "_read_threshold/")
 	if not os.path.exists(t_outdir): os.makedirs(t_outdir)
@@ -108,6 +115,7 @@ def Dist_to_params(states, pois_lambda, trans_prob, t_count, hist, win, chr, sam
 
 def Dist_to_params_outline(states, trans_prob, prob_dict):
 	# Distribution_to_parameters_file_outline
+	# Formats HMM parameters for output into a format that the HMM can read in
 	
 	# States and start probabilities
 	outline = "States:\n"
@@ -140,7 +148,9 @@ def Grab_Transposons(gff, chr_len):
 	pattern2 = r"^ID=(\S+?);"
 	recomp2 = re.compile(pattern2)
 	tp_positions = {}
-	if gff != "": # If a GFF file was provided, fill tp_positions
+	if gff != "":
+		# If a GFF file was provided, fill tp_positions dictionary
+		# with transposon positions
 		for chr in chr_len:
 			tp_positions[chr] = []
 		with open(gff) as infile:
@@ -155,22 +165,26 @@ def Grab_Transposons(gff, chr_len):
 					epos = int(line[4])
 					type = 2 # Neither transposable_element nor transposable_element_gene
 					if match.group(1) == "transposable_element_gene": type = 1
-					else: type = 0
+					elif match.group(1) == "transposable_element": type = 0
 					tp_positions[chr].append((name, spos,epos, type))
 	return tp_positions
 
 def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, pois_lambda, states, path_dict_exp_control_ratio={}):
-	# Run HMM using C++ Viterbi algorithm. Wait for completion and grab HMM path from output, then parse and output results.
+	# HMM_Dup_search runs the HMM using a Viterbi algorithm written in C++ .
+	# It waits for the HMM run to complete, grabs the HMM results from Viterbi's output, then parses and outputs results.
+	
 	outdir = os.path.join(folder, str(win) + "bp-window/")
 	param_file = os.path.join(outdir, str(t_count) + "_read_threshold/" + str(chr) + "_params.txt")
 	obs_file = os.path.join(outdir, str(chr) + "_obs.txt")
 	
 	# Run Viterbi algorithm written in C++
-	if "win" in sys.platform: # Windows
+	if "win" in sys.platform:
+		# Windows
 		run_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),"Viterbi.exe")
 		params = ' '.join([str(run_script), "-p", str(param_file), "-o", str(obs_file)])
 		HMMRun = subprocess.Popen(params, shell=False, stdout=subprocess.PIPE)
-	else: # Linux and Mac
+	else:
+		# Linux and Mac
 		run_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),"Viterbi")
 		params = ' '.join([str(run_script), "-p", str(param_file), "-o", str(obs_file)])
 		HMMRun = subprocess.Popen(params, shell=True, stdout=subprocess.PIPE)
@@ -184,7 +198,7 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, pois_lambda, states,
 		inline = inline[0].split(" ")
 		obs_list = [int(inline[i]) for i in range(0,len(inline))]
 	
-	# Figure out which windows contain transposons, assuming a GFF file was provided
+	# If a GFF file was provided, figure out which windows contain transposons
 	tp_windows = {}
 	if tp_positions != {}:
 		for (name, spos, epos, type) in tp_positions[chr]:
@@ -216,36 +230,49 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, pois_lambda, states,
 			e_pos = m.end()*win
 			fold_cov = round(sum([obs_list[i] for i in range(m.start(),m.end()+1) if obs_list[i] < t_count]) / (m.end() - m.start()) / pois_lambda, 2)
 			tp_union_list = set()
-			if tp_windows != {}: # If a GFF file was provided, include per-window transposon counts in results
+			# If a GFF file was provided, include per-window transposon counts in results
+			if tp_windows != {}:
 				for i in range(m.start(),m.end()+1):
 					for (transposon_name, type) in tp_windows[i]:
+						# Only counting the number of unique transposon types present in a window
 						tp_union_list.add((transposon_name, type))
 				transposable_elements = len([name for name, type in tp_union_list if type == 0])
 				transposable_element_genes = len([name for name, type in tp_union_list if type == 1])
-				if len(path_dict_exp_control_ratio.keys()) == 0: # Not using a control
+				if len(path_dict_exp_control_ratio.keys()) == 0:
+					# Not using a control
 					all_outlines.append( (chr,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov, transposable_element_genes, transposable_elements) )
-				else: # Using a control
+				else:
+					# Using a control
 					exp_control_ratio_avg = round(sum([float(path_dict_exp_control_ratio[win][chr][i]) for i in range(m.start(),m.end()+1)]) / (m.end() - m.start()), 2)
 					all_outlines.append( (chr,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov, transposable_element_genes, transposable_elements, exp_control_ratio_avg) )
-			else: # If a GFF file was NOT provided, DO NOT include per-window transposon counts in results
-				if len(path_dict_exp_control_ratio.keys()) == 0: # Not using a control
+			else:
+				# If a GFF file was NOT provided, DO NOT include per-window transposon counts in results
+				if len(path_dict_exp_control_ratio.keys()) == 0:
+					# Not using a control
 					all_outlines.append( (chr,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov) )
-				else: # Using a control
+				else:
+					# Using a control
 					exp_control_ratio_avg = round(sum([float(path_dict_exp_control_ratio[win][chr][i]) for i in range(m.start(),m.end()+1)]) / (m.end() - m.start()), 2)
 					all_outlines.append( (chr,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov, exp_control_ratio_avg) )
 	
 	outfilename = os.path.join(outdir, str(t_count) + "_read_threshold/" + str(chr) + "_Results.txt")
 	all_outlines = sorted(all_outlines, key = lambda entry: (entry[0], entry[1]))
 	with open(outfilename, 'w') as outfile:
-		if tp_windows != {}: # If a GFF file was provided, include per-window transposon counts in results
-			if len(path_dict_exp_control_ratio.keys()) == 0: # Not using a control
+		if tp_windows != {}:
+			# If a GFF file was provided, include per-window transposon counts in results
+			if len(path_dict_exp_control_ratio.keys()) == 0:
+				# Not using a control
 				line = "Chr\tStart_pos\tEnd_pos\tDistance\tState\tFold_Coverage\tTE Genes\tTEs\n"
-			else: # Using a control
+			else:
+				# Using a control
 				line = "Chr\tStart_pos\tEnd_pos\tDistance\tState\tFold_Coverage\tTE Genes\tTEs\tExp:Control\n"
-		else: # If a GFF file was NOT provided, DO NOT include per-window transposon counts in results
-			if len(path_dict_exp_control_ratio.keys()) == 0: # Not using a control
+		else:
+			# If a GFF file was NOT provided, DO NOT include per-window transposon counts in results
+			if len(path_dict_exp_control_ratio.keys()) == 0:
+				# Not using a control
 				line = "Chr\tStart_pos\tEnd_pos\tDistance\tState\tFold_Coverage\n"
-			else: # Using a control
+			else:
+				# Using a control
 				line = "Chr\tStart_pos\tEnd_pos\tDistance\tState\tFold_Coverage\tExp:Control\n"
 		outfile.write(line)
 		for line in all_outlines:
@@ -254,19 +281,21 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, pois_lambda, states,
 	print(outfilename, "complete")
 
 def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath):
+	# Prepare_HMM creates (1) per-window read count histograms and (2) observation files, as well as
+	# (3) details for the HMM parameter file such as read count thresholds and copy number state names.
+	#
+	# At the end of this function, Dist_to_params is called to output this data to files, and finally
+	# HMM_Dup_Search is called to run the HMM on these files and output the duplication search results.
+	
 	# Create list of chromosomes to run HMM on
-	pattern = "\S*Chr\d{1,}"
-	recomp = re.compile(pattern)
 	chr_list = []
 	if chr == "All":
-		for chr_temp in chr_len:
-			match = recomp.match(chr_temp)
-			if match:
-				chr_list.append(chr_temp)
+		chr_list = [chr_entry for chr_entry in chr_len]
 	else:
-		chr_list = [entry for entry in chr.split(',')]
+		chr_list = [chr_entry for chr_entry in chr.split(',')]
 	
-	# Create HMM observation files (contains # of reads per window in sequential order) and reads-per-window histogram tables
+	# Create the HMM observation files (path_dict, an OrderedDict containings # of reads per window in sequential order)
+	# and reads-per-window histograms (hist_dict, a dictionary whose values are chromosome-specific Counters representing reads-per-window)
 	hist_dict, path_dict = SAM_to_wincov(sam, win_list, chr_list, outdir, "False")
 	
 	# Determine the poisson lambda values for a distribution of reads given the aforementioned reads-per-window histogram tables.
@@ -274,8 +303,11 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 	singlecopy_lambda = {win: {} for win in win_list}
 	for win in win_list:
 		for chr in chr_list:
-			singlecopy_lambda[win][chr] = pois_lambda # Dictionary holding 1X copy lambdas, kept separate from user-supplied value for threshold calculations later
-	if pois_lambda == 0: # If user didn't supply 1X lambda, calculate it given histogram
+			# Dictionary holding 1X copy lambdas, used for threshold calculations later
+			singlecopy_lambda[win][chr] = pois_lambda
+	
+	# If user didn't supply 1X lambda, calculate it from chromosomal per-window read histograms
+	if pois_lambda == 0:
 		for win in win_list:
 			for chr in chr_list:
 				# First create text file for R script containing the filename for the read histogram
@@ -297,18 +329,30 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 						# Copy-pasted from linux code block. Possibly different?
 						params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save"])
 						simulation = subprocess.Popen(params, shell=True)
+					else:
+						# User is operating on an unknown OS, end program
+						print("Working with an unknown OS, ", sys.platform, ", unable to perform Poisson regression on histogram using R. Please report this problem.", sep='')
+						import sys
+						sys.exit(1)
 					simulation.wait()
-					os.remove(o_fn)
+					# Try to remove temporary file "HMMInputfiles.txt"
+					try:
+						os.remove(o_fn)
+					except:
+						print("Due to an issue with permissions, the temporary file 'HMMInputfiles.txt' could not be removed.")
 				# Read in "dist_fit.R" results file and grab Poisson regression lambda value
 				with open(i_fn_1) as infile:
 					inlines = infile.readlines()
 					inlines = [line.split() for line in inlines]
 					singlecopy_lambda[win][chr] = float(inlines[1][1])
 	
-	# Read in histograms if hist_dict is empty for a particular window (which happens when histograms were previously generated for all chromosomes for that window)
-	# This is just a time-saving feature when performing re-runs on the same data set.
+	# Read in histograms if hist_dict is empty for a particular window. This happens when histograms
+	# had already been generated for all chromosomes for that window, and is simply a time-saving feature
+	# when performing re-runs on the same data set. Histogram and observation files are not re-created if
+	# they already exist, as this is the most time-consuming part of the entire pipeline.
 	for win in win_list:
-		if not hist_dict[win]: # If this dictionary entry is empty, grab histogram from file
+		if not hist_dict[win]:
+			# If this dictionary entry is empty for some window, grab those histograms from files
 			for chr in chr_list:
 				hist_i_fn = os.path.join(outdir, str(win) + "bp-window/" + str(chr) + "_hist.txt")
 				with open(hist_i_fn) as infile:
@@ -324,12 +368,14 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 	for win in win_list:
 		for chr in chr_list:
 			temp_t_count[win][chr] = t_count[:]
-			if t_count == [0]: # If no threshold was given, assign this to maximum coverage
-				temp_t_count = [max(hist_dict[win][chr])]
-			else: # Calculate read count threshold based on X-fold value of single-copy region lambda value
+			if t_count == [0]:
+				# If no threshold was given, assign this to maximum coverage
+				temp_t_count[win][chr] = [max(hist_dict[win][chr])]
+			else:
+				# Calculate read count threshold based on X-fold value of single-copy region lambda value
 				for i in range(0,len(t_count)):
 					if t_count[i][-1:] == "X":
-						temp_t_count[win][chr][i] = int(float(t_count[i][:-1]) * singlecopy_lambda[win][chr])
+						temp_t_count[win][chr][i] = int(float(t_count[i][:-1] * singlecopy_lambda[win][chr]))
 	
 	# Assign states and their corresponding character codes
 	state_cns_list = state_cns.split(',')
@@ -343,10 +389,10 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 		# Find % total read counts for experimental without re-reading the SAM file
 		path_dict_exp = {win: {} for win in win_list}
 		
-		# Read in paths if path_dict is empty for a particular window (which happens when paths were previously generated for all chromosomes for that window)
-		# This is just a time-saving used to calculate total number of reads mapping without re-reading SAM file
+		# Read in paths if path_dict is empty for a particular window
+		# (this happens when paths were previously generated for all chromosomes for that window)
 		for win in win_list:
-			if path_dict[win] == {}: # If this dictionary entry is empty
+			if path_dict[win] == {}:
 				for chr in chr_list:
 					path_i_fn = os.path.join(outdir, str(win) + "bp-window/" + str(chr) + "_obs.txt")
 					with open(path_i_fn) as infile:
@@ -354,6 +400,7 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 						path = path.split(' ')
 						path_dict[win][chr] = path
 		total_reads = 0
+		### FOLLOWING IS WORK IN PROGRESS. PROBABLY DOES NOT WORK PROPERLY. ###
 		for chr in chr_list:
 			for win in win_list:
 				import pdb # Delete me
@@ -376,34 +423,44 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 	for win in win_list:
 		for chr in chr_list:
 			for threshold_count in temp_t_count[win][chr]:
-				## Create an HMM parameter file (poisson probabilities of given # of reads in a window based on duplication status of that window)
+				# Create an HMM parameter file (poisson probabilities of given # of reads in a window based on duplication status of that window)
 				threshold_count = Dist_to_params(states, singlecopy_lambda[win][chr], trans_prob, threshold_count, hist_dict[win][chr], win, chr, sam, outdir)
 				
-				## Run HMM using generated parameter file and observation file
+				# Run HMM using generated parameter file and observation file
 				HMM_Dup_Search(outdir, tp_positions, chr, win, threshold_count, singlecopy_lambda[win][chr], states, path_dict_exp)
 
 def SAM_to_wincov(sam_file, win_list, chr_list, outdirpart, control_use):
-	# Check to see if, for a given window size, all chromosomes have already been examined. If so, do not re-create data files for that window size
+	# Check to see if, for a given window size, all chromosomes have already had their
+	# per-window read count histogram generated. If so, do not re-create the existing
+	# data files necessary for the HMM to run.
 	win_list_needed = win_list
 	if control_use == "False":
 		win_list_needed = []
 		for win in win_list:
 			not_needed = 0
 			for chr in chr_list:
+				# Check here to see if an observation file exists. If so, assume all files have
+				# already been generated for this chromosome & window combination
 				i_fn = os.path.join(outdirpart, str(win) + "bp-window/" + str(chr) + "_obs.txt")
 				if os.path.exists(i_fn): not_needed += 1
+			# If we did not see an observation file for all chromosomes to be run on, re-create all
+			# the HMM observation and histogram files
 			if not_needed != len(chr_list): win_list_needed.append(win)
 	
 	hist_dict = {win: {} for win in win_list}
 	path_dict = {win: {} for win in win_list}
-	chr_string = ';'.join(chr_list)
-	if win_list_needed: # If list is not empty, create paths for each chromosome/window pair
-		# Get read count histograms and paths for the given window sizes
+	chr_string = ','.join(chr_list)
+	# If list is not empty, create paths for each chromosome/window pair
+	# If list is empty, we don't need to re-create existing data files, and thus the following 'if' block is skipped
+	if win_list_needed:
+		# Get per-window read count histograms and paths for the given window sizes
 		hist_dict, path_dict = SAM.Coverage_Window(sam_file, win_list_needed, chr_string, control_use)
 		if control_use == "True":
-			pass # Only need path_dict for a file being used only to find the exp:control ratio of % total reads
+			# Only need path_dict for a file being used only to find the exp:control ratio of % total reads
+			# Thus, don't need to output paths or histograms, so skip past the following 'elif' block
+			pass
 		elif control_use == "False":
-			# Check to see if folders have already been made for the provided windows
+			# Check to see if folders have already been made for the provided windows. If not, make them.
 			for chr in chr_list:
 				for win in win_list:
 					outdir = os.path.join(outdirpart,str(win) + "bp-window/")
@@ -411,6 +468,7 @@ def SAM_to_wincov(sam_file, win_list, chr_list, outdirpart, control_use):
 					print(outdir)
 					if not os.path.exists(outdir): os.makedirs(outdir)
 			
+			# Write out per-window read count histograms and paths
 			for win in win_list:
 				outdir = os.path.join(outdirpart,str(win) + "bp-window/")
 				for chr in chr_list:
@@ -427,7 +485,17 @@ def SAM_to_wincov(sam_file, win_list, chr_list, outdirpart, control_use):
 	
 	return(hist_dict, path_dict)
 
+# Grab command line options
 sam, control, gff, chr, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath = Command_line()
+
+# Determine the names of chromosomes and their lengths
 chr_len = SAM.Chr_Lengths(sam)
+
+# If a GFF file is provided, determine the location of all transposons
+# This is useful for quickly identifying false positive duplication calls
 tp_positions = Grab_Transposons(gff, chr_len)
+
+# Generate the necessary data to perform an HMM-based duplication search,
+# then run the HMM on these parameters and observations.
+# Detailed commentary is provided within sub-routines
 Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath)

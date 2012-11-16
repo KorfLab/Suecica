@@ -4,7 +4,7 @@ from collections import Counter
 
 # SAM.py package is used in parsing SAM files, capable of outputting coverage, coverage-per-window,
 # trimming reads based on read length, and outputting read length histograms. This package can also
-# combine multiple SAM files together into a single file.
+# combine reads from multiple SAM files together into a single file.
 
 
 def Chr_Lengths(filename):
@@ -135,16 +135,16 @@ def Coverage(sam_files):
         print("Overall coverage: ", str(round(sum(total_count.values()) / sum(chr_len.values()),2)), "X\n", sep='')
 
 def Coverage_Window(sam_file, win_list, chr_list, control_use):
-    ''' Returns histogram of read coverage on a per-bp-window basis for a given chromosome '''
+    ''' Returns histogram of read coverage on a per-chromosome, per-bp-window basis '''
     
-    chr_list = chr_list.split(";")
+    chr_list = chr_list.split(",")
     
     # Initialize a multi-dimensional per-window, per-chromosome series of read count HMM paths
     win_db = {int(win): {} for win in win_list}
     for win in win_list:
         win_db[win] = {chr: Counter() for chr in chr_list}
     
-    # Read in SAM file and create reads-per-window histograms
+    # Read in SAM file and create per-chromosome, reads-per-window histograms
     total_reads = 0
     if sam_file[-3:] == ".gz":
         infile = gzip.open(sam_file, 'rb')
@@ -154,9 +154,9 @@ def Coverage_Window(sam_file, win_list, chr_list, control_use):
         if sam_file[-3:] == ".gz": line = str(line, encoding='utf8')
         split_line = line.split("\t")
         chr = str(split_line[2])
-        if chr not in chr_list: continue # Ignore if read does not map, or if mapped to a chromosome not analyzed (e.g. mito, chloro)
+        # Ignore read if it does not map (*) or if mapped to a chromosome not being considered
+        if chr not in chr_list: continue
         quality = int(split_line[4])
-        #if quality == 0: continue # Ignore reads with a quality of 0, aka those which do not map uniquely
         if quality < 20: continue # Ignore reads with a quality of 0, aka those which do not map uniquely, as well as low-quality mapping reads
         total_reads += 1
         spos = int(split_line[3])
@@ -165,16 +165,10 @@ def Coverage_Window(sam_file, win_list, chr_list, control_use):
         for win in win_list:
             spos_for_dict = int(spos // win)
             epos_for_dict = int(epos // win)
-            try:
-                win_db[win][chr][spos_for_dict] += 1
-            except KeyError:
-                win_db[win][chr][spos_for_dict] = 1
+            win_db[win][chr][spos_for_dict] += 1
             if spos_for_dict != epos_for_dict:
                 total_reads += 1
-                try:
-                    win_db[win][chr][epos_for_dict] += 1
-                except KeyError:
-                    win_db[win][chr][epos_for_dict] = 1
+                win_db[win][chr][epos_for_dict] += 1
     infile.close()
         
     # For all read-per-window counts that did not exist, assign them a value of 0
@@ -194,7 +188,7 @@ def Coverage_Window(sam_file, win_list, chr_list, control_use):
     path_dict = {win: {} for win in win_list}
     hist_dict = {win: {} for win in win_list}
     
-    # Fill in path and histogram dictionaries with data, then return them to the calling function
+    # Fill in path and histogram dictionaries with data, then return them
     for win in win_list:
         for chr in chr_list:
             path = ' '.join([str(cov) for (win_num, cov) in sorted(win_db[win][chr].items(), key = lambda win_num: win_num)])
@@ -205,7 +199,8 @@ def Coverage_Window(sam_file, win_list, chr_list, control_use):
                     hist[count] += 1
                 hist_dict[win][chr] = hist
             else:
-                hist_dict = {} # Only path_dict is used when control_use==True
+                # Only path_dict is used when control_use==True
+                hist_dict = {}
     return(hist_dict, path_dict)
 
 def Read_Length_Hist(filelist):
