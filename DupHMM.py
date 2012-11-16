@@ -4,8 +4,6 @@ import argparse, re, os, subprocess, sys
 from collections import OrderedDict, Counter
 from math import exp, factorial, log, lgamma
 import SAM
-#import sys; sys.path.append('../Packages/')
-#from GenomeTools import SAM
 
 # DupHMM.py runs a duplication-finding HMM on a SAM file. The SAM file is first broken up into user-specified window sizes,
 #	  reads mapping per-window counted, and a Poisson regression is performed on the resulting histogram of count data. This Poisson lambda
