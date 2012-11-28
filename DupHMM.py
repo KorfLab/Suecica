@@ -178,16 +178,20 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, pois_lambda, states,
 	obs_file = os.path.join(outdir, str(chr) + "_obs.txt")
 	
 	# Run Viterbi algorithm written in C++
-	if "win" in sys.platform:
+	if sys.platform in ["linux","linux2"] or sys.platform in ["darwin", "os2", "os2emx"]:
+		# Linux and Mac
+		run_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),"Viterbi")
+		params = ' '.join([str(run_script), "-p", str(param_file), "-o", str(obs_file)])
+		HMMRun = subprocess.Popen(params, shell=True, stdout=subprocess.PIPE)
+	elif sys.platform in ["win32","win64"]:
 		# Windows
 		run_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),"Viterbi.exe")
 		params = ' '.join([str(run_script), "-p", str(param_file), "-o", str(obs_file)])
 		HMMRun = subprocess.Popen(params, shell=False, stdout=subprocess.PIPE)
 	else:
-		# Linux and Mac
-		run_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),"Viterbi")
-		params = ' '.join([str(run_script), "-p", str(param_file), "-o", str(obs_file)])
-		HMMRun = subprocess.Popen(params, shell=True, stdout=subprocess.PIPE)
+		# User is operating on an unknown OS, end program
+		print("Working with an unknown OS, ", sys.platform, ", unable to run Viterbi algorithm. Please report this problem.", sep='')
+		sys.exit(0)
 	path = HMMRun.communicate()[0].decode("utf-8") # Grab path from Viterbi.exe output
 	path = path[::-1]
 	
@@ -319,7 +323,7 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 					with open(o_fn, 'w') as outfile:
 						outfile.write(line)
 					# Now call R script "dist_fit.R" to perform Poisson regression
-					if "linux" in sys.platform:
+					if sys.platform in ["linux","linux2"]:
 						params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save"])
 						simulation = subprocess.Popen(params, shell=True)
 					elif sys.platform in ["win32","win64"]:
@@ -332,8 +336,7 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 					else:
 						# User is operating on an unknown OS, end program
 						print("Working with an unknown OS, ", sys.platform, ", unable to perform Poisson regression on histogram using R. Please report this problem.", sep='')
-						import sys
-						sys.exit(1)
+						sys.exit(0)
 					simulation.wait()
 					# Try to remove temporary file "HMMInputfiles.txt"
 					try:
