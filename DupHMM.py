@@ -1,43 +1,106 @@
 #!/usr/bin/env python3.2
 # Written by Matthew Porter @ UC Davis, Korf and Comai Labs
-import argparse, re, os, subprocess, sys
+import argparse, re, random, os, subprocess, sys
 from collections import OrderedDict, Counter
-from math import exp, factorial, log, lgamma
+from math import exp, factorial, log, lgamma, fabs
 import SAM
+import pdb # Delete me
 
 # DupHMM.py runs a duplication-finding HMM on a SAM file. The SAM file is first broken up into user-specified window sizes,
 #	  reads mapping per-window counted, and a Poisson regression is performed on the resulting histogram of count data. This Poisson lambda
 #	  value is then used to generate a HMM parameter file, which the duplication searching HMM then uses to identify duplicated windows.
+
+def Cluster_Set_Group_Data(cluster_set, hist_dict, max_reads):
+	# This function groups data points to the appropriate cluster point and returns the data point-cluster point distance sum
+	
+	data_count_dict = Counter()
+	optimum_cluster_dists = {cluster: [] for cluster in cluster_set} # Value = List containing (data point-cluster distance**2 * freq)
+	for data_point, freq in hist_dict[win][chr].items():
+		# Cycle through each data point, finding which cluster point each is closest to
+		# and storing (distance^2 * freq) to that cluster's list of data points
+		min_cluster = ""				# Will hold closest cluster to data point. -1 is a default 'not assigned yet' value
+		min_cluster_dist = max_reads+1	# Will hold closest cluster's distance from data point
+		for cluster_point in cluster_set:
+			data_cluster_dist = fabs(data_point - cluster_point)
+			if data_cluster_dist < min_cluster_dist:
+				min_cluster_dist = data_cluster_dist
+				min_cluster = cluster_point
+		optimum_cluster_dists[cluster].append(min_cluster_dist**2 * freq)
+		data_count_dict[cluster] += 1
+	
+	# Sum up all the data point-cluster point distances for each cluster.
+	# This sum will be used as a 'fitness' value for this set of clusters.
+	for cluster_point in cluster_set:
+		dist_sum += sum( [min_cluster_dist for min_cluster_dist in optimum_cluster_dists[cluster_point]] )
+	return(dist_sum, data_count_dict)
+
+def Cluster_Mutate(cluster_set, small_mut_freq, large_mut_freq, max_reads):
+	# With low frequency , shift cluster points a bit
+	# Maximum small mutation shift distance is 0.1% of maximum number of reads per window possible
+	# Maximum large mutation shift distance is 1% of maximum number of reads per window possible
+	
+	new_cluster_set = cluster_set
+	for i in range(len(cluster_set)):
+		random_value = random.random()
+		if random_value < large_mut_freq:
+			shift_dist = random.randrange(-1*max_reads*0.01, max_reads*0.01)
+			new_cluster_set[i] += shift_dist
+		elif random_value < small_mut_freq:
+			shift_dist = random.randrange(-1*max_reads*0.001, max_reads*0.001)
+			new_cluster_set[i] += shift_dist
+	new_cluster_set = sorted(new_cluster_set)
+	return new_cluster_set
+
+def Cluster_Next_Generation(cluster_set_list, breeding_individuals, small_mut_freq, large_mut_freq, max_reads):
+	# Create a new generation of cluster points given a breeding population of clusters
+	
+	# From the previous generation's 100 sets of k # of clusters, pick the top cluster sets which
+	# have the lowest data point-cluster point distance sum to populate the next generation
+	next_gen_cluster_set_list = sorted(cluster_set_list, key = lambda cluster_set_list: cluster_set_list[1])[:breeding_individuals]
+	
+	# With low frequency, shift breeding population cluster points a bit
+	for i in range(len(next_gen_cluster_set_list)):
+		for cluster_set, dist_sum in next_gen_cluster_set_list[i]:
+			new_cluster_set = Cluster_Mutate(cluster_set, small_mut_freq, large_mut_freq, max_reads)
+			if cluster_set != new_cluster_set:
+				next_gen_cluster_set_list[i] = (new_cluster_set, 0)
+	
+	# Create (100-#_of_breeding_clusters) individuals. Their cluster points will result from 'crossovers' among the
+	# breeding individuals. The next generation individuals are also subject to 'mutational' position drifting
+	cluster_list = []
+	for cluster_set, dist_sum in next_gen_cluster_set_list:
+		for cluster in cluster_set:
+			cluster_list.append(cluster)
+	
+	for i in range(breeding_individuals, 100):
+		new_cluster_set = random.sample(cluster_list,k)
+		new_cluster_set = Cluster_Mutate(new_cluster_set, small_mut_freq, large_mut_freq, max_reads)
+		next_gen_cluster_set_list.append((new_cluster_set, 0))
+		
+		# Avoid recalculating dist_sum if possible. Look to see if cluster_set's dist_sum has already been calculated
+		for cluster_set, dist_sum in cluster_set_list:
+			if new_cluster_set == cluster_set:
+				next_gen_cluster_set_list[i] = (new_cluster_set, dist_sum)
+				break
+	return next_gen_cluster_set_list
 
 def Command_line():
 	parser = argparse.ArgumentParser(description="DupHMM.py runs a duplication-finding HMM on a SAM file. The SAM file is first broken up into user-specified window sizes, \
 									 reads mapping per-window counted, and a Poisson regression is performed on the resulting histogram of count data. This Poisson lambda \
 									 value is used to generate a HMM parameter file, which the duplication searching HMM then uses.")
 	parser.add_argument('-sam', default="Data/Sue/sue1/single_bp_preprocess/set5/libSUE1_set5_aln_Aa_Filtered.sam.gz", type=str, help='SAM filename containing reads for the HMM to run on.', metavar='SAMFilename')
-	parser.add_argument('-csam', default="", type=str, help='SAM filename for an optional comparison data set. Duplications for a window will be called using the -sam SAM_filename, but a coverage ratio for that window (normalized for library size) relative to the -csam SAM_filename will be included in the results.', metavar='ComparisonSAM')
-	parser.add_argument('-gff', default="", type=str, help='GFF file for the reference genome. Used to annotate regions in the results which contain transposons. This makes spotting false positives easier (Default="../TAIR9_GFF3_genes_transposons.gff").', metavar='GFFFile')
+	parser.add_argument('-gff', default="../Thalyrata.gff", type=str, help='GFF file for the reference genome. Used to annotate regions in the results which contain transposons. This makes spotting false positives easier (Default="../TAIR9_GFF3_genes_transposons.gff").', metavar='GFFFile')
 	parser.add_argument('-chr', default="All", type=str, help='Chromosome to run HMM on (Default=Run HMM on all chromosomes). To look at >1 chromosome but not all chromosomes, provide them in a comma-delimited format: e.g. "Chr1,Chr2"', metavar='Chromosome')
 	parser.add_argument('-w', default="2500", type=str, help='Window size the HMM will use, in bps (Default=2500). To look at multiple windows, provide them in a comma-delimited format: e.g. "1000,2000,2500,3000".', metavar='Window')
-	parser.add_argument('-scn', default="1,2,5", type=str, help='Copy numbers for HMM states, separated by commas and listed in increasing numerical order (Default="1,2,5").', metavar='StateCopyNumbers')
-	parser.add_argument('-sn', default="S,D,H", type=str, help='Single character names corresponding to copy number HMM states, separated by commas and listed in increasing numerical order (Default="S,D,H", short for Single,Double,High).', metavar='StateNames')
-	parser.add_argument('-l', default=0, type=float, help='Manually provide a lambda value for the poisson distribution representing a single copy region. Entering this skips Poisson regression over the per-window read count histogram. Usage of this option discouraged. (Default=Value determined by poisson regression on per-window histogram data)', metavar='LambdaMean')
-	parser.add_argument('-trans', default=-50, type=float, help='Log probability for moving from same state->different state (Default=-50, Suggested:-50 or -100). Same State->Same State probability is unchangeable from 1.', metavar='TransitionProb')
-	parser.add_argument('-thr', default="10X,20X", type=str, help='Threshold value for read counts. If a window contains more reads than the threshold, the previous window\'s state and probability are copied to the read spike window, effectively ignoring read spikes. Multiple comma-separated values can be provided here for multiple re-runs, e.g. "100,200". Threshold can also be set relative to the lambda value for a 1X region, e.g. "10X,20X". Default="10X,20X"', metavar='ReadThreshold')
-	parser.add_argument('-o', default="Output/DupHMM_sue1_set5_AaFiltered", type=str, help='Output directory for HMM results (Default="Output/DupHMM_sue1_set5_AaFiltered")', metavar='OutputDir')
+	parser.add_argument('-o', default="Output/DupHMM_sue1_set5_AaFiltered_Kmeans_clustering", type=str, help='Output directory for HMM results (Default="Output/DupHMM_sue1_set5_AaFiltered")', metavar='OutputDir')
 	parser.add_argument('-R', default="", type=str, help="Directory where R is located. This only needs to be entered once, as the path is then saved in 'Rpath.txt'. Your R installation needs to have the 'MASS' package installed.", metavar='RPath')
 	
 	args = parser.parse_args()
 	sam = args.sam
-	control = args.csam
 	gff = args.gff
 	chr = args.chr
 	win_list = args.w
 	win_list = [int(entry) for entry in win_list.split(',')]
-	state_cns = args.scn
-	state_names = args.sn
-	pois_lambda = args.l
-	trans_prob = args.trans
-	t_count = (args.thr).split(",")
 	outdir = args.o
 	if outdir[-1:] == "\"": outdir = outdir[:-1]
 	Rpath = args.R
@@ -57,27 +120,25 @@ def Command_line():
 		with open("Rpath.txt", 'w') as outfile:
 			outfile.write(Rpath)
 	
-	return(sam, control, gff, chr, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath)
+	return(sam, gff, chr, win_list, outdir, Rpath)
 
-def Dist_to_params(states, pois_lambda, trans_prob, t_count, hist, win, chr, sam, outdir):
+def Dist_To_Params(hist, k_cluster_count, k_loc, k_data_count, win, chr, sam, outdir):
 	# Distribution_to_parameters_file
 	# Converts per-window read count histogram with a Poisson fit to it into
 	# parameters that an HMM can utilize
 	
-	# Calculating emission probabilities for X-fold copy states based on Poisson probabilities
+	# Calculating emission probabilities for CNV states based on Poisson probabilities
 	prob_dict = {}
 	max_value = max(hist)
-	if t_count != 0: # If there is a read count threshold t, discard read counts >= t
-		max_value = int(t_count)
-	
+
 	j = 0
-	for copy_num in states.keys():
+	for cluster_pos in k_loc:
 		prob_list = []
 		for k in range(0,max_value+1):
-			mu = pois_lambda*copy_num
+			mu = cluster_pos
 			#nonlogprob = exp(-mu) * mu**k / factorial(k)	# Fails when k is too large. Must be handled in log-space
 			prob = exp(k*log(mu)-lgamma(k+1) - mu)			# Above equation handled in log-space
-			if prob == 0 and j == len(states.keys())-1:
+			if prob == 0 and j == len(k_loc)-1:
 				# Find the maximum non-zero probability for highest copy-number state
 				left_tailed = True
 				for entry in prob_list: # Check to make sure this isn't a left-tailed 0
@@ -90,22 +151,30 @@ def Dist_to_params(states, pois_lambda, trans_prob, t_count, hist, win, chr, sam
 					max_value = t_count = k-1
 					break
 			prob_list.append(prob)
-		prob_dict[copy_num] = prob_list
+		prob_dict[cluster_pos] = prob_list
 		j += 1
 	
 	# Trim histograms such that the copy number states do not have an excessive number of right-tailed 0's
 	# HMM treats missing reads-per-window counts as 0, so right-sided trimming histograms to the maximum read-per-window read count
 	# with a non-zero probability for the highest copy number state helps save parameter file disk space, time, and memory
 	i = 0
-	for copy_num in states.keys():
-		prob_dict[copy_num] = {i: prob_dict[copy_num][i] for i in range(0,t_count+1)}
-		i += 1
+	for cluster_pos in k_loc:
+		prob_dict[cluster_pos] = {i: prob_dict[cluster_pos][i] for i in range(0,t_count+1)}
 		# Do not need to re-trim highest copy-number state
-		if i == len(states.keys()) - 1: break
-		
+		i += 1
+		if i == len(k_loc) - 1: break
+	
+	# Create transition probabilities between states based on relative percentages of each state
+	total_data_points = sum([point_sum for point_sum in k_data_count.values()])
+	trans_prob_dict = {cluster: {} for cluster in k_loc}
+	for cluster in k_loc:
+		trans_prob_dict[cluster] = {x: 10**(k_data_count[x] / total_data_points * 75) for x in k_loc}
+	for cluster in k_loc:
+		trans_prob_dict[cluster][cluster] = 1 - (len(k_loc) - 1) * 10**(k_data_count[x] / total_data_points * 75)
+	
 	# Create parameter file
-	# Call Dist_to_params_outline to create the line of text to be written out
-	outline = Dist_to_params_outline(states, trans_prob, prob_dict)
+	# Call Dist_To_Params_Outline to create the line of text to be written out
+	outline = Dist_To_Params_Outline(k_loc, prob_dict, trans_prob_dict)
 	t_outdir = os.path.join(outdir,str(win) + "bp-window/" + str(t_count) + "_read_threshold/")
 	if not os.path.exists(t_outdir): os.makedirs(t_outdir)
 	outfilename = os.path.join(t_outdir, str(chr) + "_params.txt")
@@ -113,32 +182,32 @@ def Dist_to_params(states, pois_lambda, trans_prob, t_count, hist, win, chr, sam
 		outfile.write(outline)
 	return(max_value)
 
-def Dist_to_params_outline(states, trans_prob, prob_dict):
+def Dist_To_Params_Outline(k_loc, prob_dict, trans_prob_dict):
 	# Distribution_to_parameters_file_outline
 	# Formats HMM parameters for output into a format that the HMM can read in
 	
 	# States and start probabilities
+	# ASCII 65 = 'A'
 	outline = "States:\n"
-	outline += '\n'.join(states.values())
+	states = [chr(x) for x in range(65,len(k_loc))]
+	outline += '\n'.join(states)
 	outline += "\n\nStart Probabilities:\n"
-	for i in states.values():
+	for i in states:
 		outline += str(i) + "\t" + str(1/len(states)) + "\n"
 	
 	# Transition probabilities
 	outline += "\nTransition Probabilities:"
 	for i in range(0,len(states)):
-		temp_trans = 1 if i == 0 else 10**trans_prob
-		outline += "\n" + str(states[list(states.keys())[i]]) + "\t" + str(states[list(states.keys())[0]]) + "\t" + str(temp_trans)
+		outline += "\n" + str(states[i]) + "\t" + str(states[0]) + "\t" + str(trans_prob_dict[k_loc[i]] [k_loc[0]] )
 		for j in range(1,len(states)):
-			temp_trans = 1 if i == j else 10**trans_prob
-			outline += "\n\t" + str(states[list(states.keys())[j]]) + "\t" + str(temp_trans)
+			outline += "\n\t" + str(states[j]) + "\t" + str(trans_prob_dict[k_loc[i]] [k_loc[j]] )
 	
 	# Part of output containing emission probabilities
 	outline += "\n\nEmission Probabilities:\n"
-	for copy_num in states.keys():
-		prob_list = prob_dict[copy_num]
-		outline += str(states[copy_num])
-		outline2 = ''.join(["\t" + str(i) + "\t" + str(prob_list[i]) + "\n" for i in range(0,len(prob_dict[copy_num]))])
+	for cluster in k_loc:
+		prob_list = prob_dict[cluster]
+		outline += str(states[cluster])
+		outline2 = ''.join(["\t" + str(i) + "\t" + str(prob_list[i]) + "\n" for i in range(0,len(prob_dict[cluster]))])
 		outline += str(outline2) + "\n"
 	return outline
 
@@ -169,7 +238,7 @@ def Grab_Transposons(gff, chr_len):
 					tp_positions[chr].append((name, spos,epos, type))
 	return tp_positions
 
-def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, pois_lambda, states, path_dict_exp_control_ratio={}):
+def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, k_loc_dict, k_data_count_dict):
 	# HMM_Dup_search runs the HMM using a Viterbi algorithm written in C++ .
 	# It waits for the HMM run to complete, grabs the HMM results from Viterbi's output, then parses and outputs results.
 	
@@ -225,6 +294,9 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, pois_lambda, states,
 	# Write out HMM path along with average fold coverage and transposon count for each window
 	# If using a control, include exp:control ratio in output as well
 	all_outlines = []
+	# ASCII 65 = 'A'
+	states = [chr(x) for x in range(65,len(k_loc))]
+	single_copy_lambda = sorted(k_data_point_dict.items(), key = lambda entry: entry[1], reverse=True)[0][0]
 	for state in states:
 		pattern = str(states[state]) + r"{1,}"
 		recomp = re.compile(pattern)
@@ -232,7 +304,7 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, pois_lambda, states,
 		for m in recomp.finditer(path):
 			s_pos = m.start()*win
 			e_pos = m.end()*win
-			fold_cov = round(sum([obs_list[i] for i in range(m.start(),m.end()+1) if obs_list[i] < t_count]) / (m.end() - m.start()) / pois_lambda, 2)
+			fold_cov = round(sum([obs_list[i] for i in range(m.start(),m.end()+1) if obs_list[i] < t_count]) / (m.end() - m.start()) / single_copy_lambda, 2)
 			tp_union_list = set()
 			# If a GFF file was provided, include per-window transposon counts in results
 			if tp_windows != {}:
@@ -284,11 +356,184 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, pois_lambda, states,
 			outfile.write(line)
 	print(outfilename, "complete")
 
-def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath):
+def K_Means_Clustering(hist_dict):
+	# K_Means_Clustering, when given a reads-per-window histogram, attempts to find the best possible
+	# clustering of this data to some number of groups 'k'. This is accomplished by using a genetic
+	# algorithm. First, a randomized set of k clustering points is created 100 times, representing the
+	# 'initial population'. These sets of clusters are scored based on the combined squared sum of the
+	# data point-cluster point distances. Sets of clustering points are considered to be the 'most fit'
+	# based on how low this combined sum is. From the initial population of 100 cluster sets, the top few are
+	# chosen to pass on to the next generation. A population of 100 sets is created for the 2nd generation,
+	# with the points in each set being randomly chosen cluster points from the top cluster sets in the 1st generation.
+	# Some 'mutation' may occur: with low frequency, the positioning of a cluster can change up to +/- 0.1% of the
+	# maximum number of reads-per-window possible. With some lower frequency, the positioning of a cluster can
+	# change up to a larger value of +/- 1%. This process of picking the most fit individuals to continue on to a new
+	# generation proceeds until each cluster point is virtually the same among the top few individuals, or until
+	# 30 generations have passed, at which point the program will try again with a new starting population.
+	# If each new starting population fails to converge after a total of three tries, the program aborts, informs
+	# the user of the inability to reach an optimum grouping of data points, and prints the best available clusters.
+	
+	# The correct value of k to be used is determined by starting with k=1, finding the optimum grouping with
+	# just one cluster point, and then incrementing k until the most optimum k value is found. This is determined
+	# by (a) looking to see if the per-cluster point sum of data point-cluster point distances is no longer
+	# decreasing when compared to the previous generation, and by (b) comparing the locations of clustering
+	# points after the genetic algorithm has reached a consensus, and noting that if two clustering points
+	# are excessively close to one another (<5 apart), we have likely exceeded the optimum k value.
+	
+	pdb.set_trace() # Delete me
+	small_mut_freq = 0.03
+	large_mut_freq = 0.01
+	breeding_individuals = 10
+	
+	# Will store the optimum number of k cluster points to be used for each win/chr combo
+	k_cluster_count_dict = {win: Counter() for win in hist_dict} 
+	for win in k_cluster_count_dict:
+		k_cluster_count_dict[win] = {chr: 0 for chr in hist_dict[win]}
+	
+	# Will store a list of genetic algorithm-optimized cluster locations for each win/chr combo
+	k_loc_dict = {win: {} for win in hist_dict}
+	for win in k_loc_dict:
+		k_loc_dict[win] = {chr: [] for chr in hist_dict[win]}
+	
+	# Will store the number of data points that belong to each cluster
+	k_data_count_dict = {win: {} for win in hist_dict}
+	for win in k_data_count_dict:
+		k_data_count_dict[win] = {chr: Counter() for chr in hist_dict[win]}
+	
+	# Find optimum data clustering for each window & chromosome combination
+	for win in hist_dict:
+		for chr in hist_dict[win]:
+			# Remove histogram elements in which a coverage value appears with a frequency of 0, then
+			# calculate the minimum and maximum reads-per-window values that can be found on this chromosome
+			hist_dict[win][chr] = Counter({cov: freq for cov, freq in hist_dict[win][chr].items() if freq != 0})
+			min_reads = min(hist_dict[win][chr].keys())
+			max_reads = max(hist_dict[win][chr].keys())
+			
+			# Find the optimum number of k clustering points. The following iteratively runs a genetic algorithm
+			# to optimize the grouping of data points to k clusters for as many k values as is necessary. This
+			# is done until the distance between cluster points becomes insignificant. If a value of k yields
+			# insignificant cluster point distances (defined as < 0.5% max # of possible reads mapping per window)
+			# between two cluster points, k-1 is the ideal number of clusters. Alternatively, if the average data
+			# point-cluster point sum, multiplied by k, is higher than the sum*k given k-1 clusters, k-1 would
+			# again be set as the ideal number of clusters.
+			
+			# k_loc_dict_temp will hold optimum cluster set for each k value until optimum k is determined.
+			# Optimum k's clusters will be stored in k_loc_dict
+			k_loc_dict_temp = {}
+			
+			# k_data_count_dict_tmp will hold the number of data points grouping to each cluster for each k value
+			# until an optimum k is determined. Optimum k's clusters will be stored in k_data_count_dict
+			k_data_count_dict_tmp = {}
+			
+			k = 0
+			while k < 200:
+				k += 1
+				break_for_next_k = False
+				initial_pop_attempt = 0
+				# In the case that no optimized consensus of k-means clustering can be reached, the following stores the best cluster sets from 3 separate attempts
+				gen_25_cluster_sets = {1: [], 2: [], 3: []}
+				while initial_pop_attempt < 3:
+					initial_pop_attempt += 1
+					
+					# Generate an initial population of 100 sets of k # of clusters, with each cluster assigned a
+					# random integer position between the minimum and maximum possible values for reads mapping per window
+					cluster_set_list = [] # Key = Cluster set points, Value = Sum of data point-cluster point distances
+					for i in range(100):
+						cluster_set = []
+						for j in range(k):
+							cluster_set.append(random.randrange(min_reads,max_reads))
+						cluster_set = sorted(cluster_set)
+						dist_sum = 0 # Will hold total distance of each cluster point from their data points
+						if k == 1:
+							# Code optimized for when only one cluster point is used
+							for cluster_point in cluster_set:
+								dist_sum += sum( [(data_point - cluster_point)**2 * freq for data_point, freq in hist_dict[win][chr].items()] )
+						else:
+							# Code for when >1 clusters are present. Data points must be placed into the closest cluster
+							dist_sum, data_count_dict = Cluster_Set_Group_Data(cluster_set, hist_dict, max_reads)
+						cluster_set_list.append([cluster_set, dist_sum])
+					
+					# Iteratively create new generations given the most successful individuals in the previous generation.
+					# Do not let this iterative process continue beyond 25 generations.
+					gen_number = 1
+					prev_gen_cluster_set_list = []
+					while gen_number < 25:
+						gen_number += 1
+						cluster_data_point_dict = {} # Key = Cluster Set, Value = Number of data points mapping to each cluster point
+						cluster_set_list = Cluster_Next_Generation(cluster_set_list, breeding_individuals, small_mut_freq, large_mut_freq, max_reads)
+						for i in range(len(cluster_set_list)):
+							cluster_set, dist_sum = next_gen_cluster_set_list[i]
+							if dist_sum == 0: # If dist_sum hasn't been saved from a previous calculation, re-calculate
+								dist_sum, data_count_dict = Cluster_Set_Group_Data(cluster_set, hist_dict, max_reads)
+								cluster_set_list[i] = [cluster_set, dist_sum]
+								cluster_data_point_dict[cluster_set] = data_count_dict
+						if prev_gen_cluster_set_list != []:
+							# Check several criteria to see if the genetic algorithm has reached a consensus on cluster location
+							# If so, save the single highest scoring cluster for this k value, then check to see if previous k values
+							# scored better. If so, set k-1 as the optimum clustering value. If not, continue increasing k.
+							
+							# 1) Check to see if the top 10 scoring cluster sets are identical to the previous generation
+							prev_gen_tmp = [cluster_set for cluster_set, dist_sum in sorted(prev_gen_cluster_set_list, key = lambda prev_gen_cluster_set_list: prev_gen_cluster_set_list[1])[:breeding_individuals]]
+							total_matches = 0
+							for cluster_set, dist_sum in sorted(cluster_set_list, key = lambda cluster_set_list: cluster_set_list[1])[:breeding_individuals]:
+								if cluster_set in prev_gen_tmp:
+									total_matches += 1
+							if total_matches == breeding_individuals:
+								best_cluster_set = sorted(cluster_set_list, key = lambda cluster_set_list: cluster_set_list[1])[0]
+								k_loc_dict_temp[k] = best_cluster_set
+								k_data_count_dict_tmp[k] = cluster_data_point_dict[best_cluster_set]
+								break_for_next_k = True
+								print("Consensus reached for k=", str(k), " in ", gen_number-1, " generations.\n",sep='') # Delete me
+								break
+							
+							# 2) Check to see if the average distance between sets of cluster points is <1% of the maximum number of reads possible
+							avg_dist = 0
+							for i in range(1,len(cluster_set_list)):
+								for j in range(len(cluster_set_list[i][0])):
+									avg_dist += fabs(cluster_set_list[i][j] - cluster_set_list[0][j])
+							avg_dist /= ( (len(cluster_set_list) - 1) * k )
+							if avg_dist < 0.01 * max_reads:
+								best_cluster_set = sorted(cluster_set_list, key = lambda cluster_set_list: cluster_set_list[1])[0]
+								k_loc_dict_temp[k] = best_cluster_set
+								k_data_count_dict_tmp[k] = cluster_data_point_dict[best_cluster_set]
+								break_for_next_k = True
+								print("Consensus reached for k=", str(k), " in ", gen_number, " generations.\n",sep='') # Delete me
+								break
+						
+						prev_gen_cluster_set_list = cluster_set_list
+					
+					if break_for_next_k == True:
+						# gen_number < 25. The clusters converged.
+						break
+					else:
+						# gen_number == 25. The clusters did not converge, so create a new initial population and try again.
+						# Save the optimal cluster set in case convergence fails 3 times; user may want to know what the closest to optimal positions were.
+						gen_25_cluster_sets[initial_pop_attempt] = sorted(cluster_set_list, key = lambda cluster_set_list: cluster_set_list[1])[0]
+				
+				if initial_pop_attempt == 3 and k not in k_loc_dict_temp:
+					# If 3 initial populations were created and not one resulted in a convergence of cluster points, inform user that
+					# the program failed to converge, print out the best clusters from each attempt, and gracefully exit the program
+					print("Genetic algorithm was unable to reach a convergence on an optimized k-means clustering of the data points \
+						  after generating 3 random initial populations, running each for 25 generations. The best cluster from each \
+						  generation is presented below:\n\n",sep='')
+					for attempt_num, cluster_set in sorted(gen_25_cluster_sets.items()):
+						print("Attempt #", str(attempt_num), ": ", str(cluster_set), "\n", sep='')
+					sys.exit(0)
+				
+				elif k_loc_dict_temp[k-1][1] / (k-1) < k_loc_dict_temp[k][1] / k:
+					# Determine whether or not k-1 dist_sum (normalized for the number of clusters used) was the optimal value for k.
+					# If so, halt genetic algorithm and return the k-1 cluster sets to be used for the creation of HMM probabilities.
+					k_cluster_count_dict[win][chr] = k-1
+					k_loc_dict[win][chr] = k_loc_dict_temp[k-1]
+					k_data_count_dict[win][chr] = k_data_count_dict_tmp[k-1]
+	
+	return(k_cluster_count_dict, k_loc_dict, k_data_count_dict)
+
+def Prepare_HMM(sam, tp_positions, chr_len, chr, win_list, outdir, Rpath):
 	# Prepare_HMM creates (1) per-window read count histograms and (2) observation files, as well as
 	# (3) details for the HMM parameter file such as read count thresholds and copy number state names.
 	#
-	# At the end of this function, Dist_to_params is called to output this data to files, and finally
+	# At the end of this function, Dist_To_Params is called to output this data to files, and finally
 	# HMM_Dup_Search is called to run the HMM on these files and output the duplication search results.
 	
 	# Create list of chromosomes to run HMM on
@@ -301,53 +546,6 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 	# Create the HMM observation files (path_dict, an OrderedDict containings # of reads per window in sequential order)
 	# and reads-per-window histograms (hist_dict, a dictionary whose values are chromosome-specific Counters representing reads-per-window)
 	hist_dict, path_dict = SAM_to_wincov(sam, win_list, chr_list, outdir, "False")
-	
-	# Determine the poisson lambda values for a distribution of reads given the aforementioned reads-per-window histogram tables.
-	# If the user supplied a 1X copy region lambda value, use that instead.
-	singlecopy_lambda = {win: {} for win in win_list}
-	for win in win_list:
-		for chr in chr_list:
-			# Dictionary holding 1X copy lambdas, used for threshold calculations later
-			singlecopy_lambda[win][chr] = pois_lambda
-	
-	# If user didn't supply 1X lambda, calculate it from chromosomal per-window read histograms
-	if pois_lambda == 0:
-		for win in win_list:
-			for chr in chr_list:
-				# First create text file for R script containing the filename for the read histogram
-				o_fn = "HMMInputfiles.txt"
-				i_fn_1 = os.path.join(outdir,str(win) + "bp-window/" + str(chr) + "_hist_distfits.txt")
-				if not os.path.exists(i_fn_1):
-					i_fn_2 = os.path.join(outdir, str(win) + "bp-window/" + str(chr) + "_hist.txt")
-					line = str(i_fn_2) + "\n"
-					with open(o_fn, 'w') as outfile:
-						outfile.write(line)
-					# Now call R script "dist_fit.R" to perform Poisson regression
-					if sys.platform in ["linux","linux2"]:
-						params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save"])
-						simulation = subprocess.Popen(params, shell=True)
-					elif sys.platform in ["win32","win64"]:
-						params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save --slave"])
-						simulation = subprocess.Popen(params)
-					elif sys.platform in ["darwin", "os2", "os2emx"]:
-						# Copy-pasted from linux code block. Possibly different?
-						params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save"])
-						simulation = subprocess.Popen(params, shell=True)
-					else:
-						# User is operating on an unknown OS, end program
-						print("Working with an unknown OS, ", sys.platform, ", unable to perform Poisson regression on histogram using R. Please report this problem.", sep='')
-						sys.exit(0)
-					simulation.wait()
-					# Try to remove temporary file "HMMInputfiles.txt"
-					try:
-						os.remove(o_fn)
-					except:
-						print("Due to an issue with permissions, the temporary file 'HMMInputfiles.txt' could not be removed.")
-				# Read in "dist_fit.R" results file and grab Poisson regression lambda value
-				with open(i_fn_1) as infile:
-					inlines = infile.readlines()
-					inlines = [line.split() for line in inlines]
-					singlecopy_lambda[win][chr] = float(inlines[1][1])
 	
 	# Read in histograms if hist_dict is empty for a particular window. This happens when histograms
 	# had already been generated for all chromosomes for that window, and is simply a time-saving feature
@@ -366,71 +564,18 @@ def Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, s
 						hist[int(cov)] = int(freq)
 				hist_dict[win][chr] = hist
 	
-	# Assign read count thresholds for window/chromosome combinations
-	temp_t_count = {win: {} for win in win_list}
-	for win in win_list:
-		for chr in chr_list:
-			temp_t_count[win][chr] = t_count[:]
-			if t_count == [0]:
-				# If no threshold was given, assign this to maximum coverage
-				temp_t_count[win][chr] = [max(hist_dict[win][chr])]
-			else:
-				# Calculate read count threshold based on X-fold value of single-copy region lambda value
-				for i in range(0,len(t_count)):
-					if t_count[i][-1:] == "X":
-						temp_t_count[win][chr][i] = int(float(t_count[i][:-1] * singlecopy_lambda[win][chr]))
-	
-	# Assign states and their corresponding character codes
-	state_cns_list = state_cns.split(',')
-	state_names_list = state_names.split(',')
-	states = OrderedDict({int(state_cns_list[i]): state_names_list[i] for i in range(0,len(state_cns_list))})
+	# Pass histograms to k-means clustering function w/ genetic algorithm-based positioning of groups
+	k_cluster_count_dict, k_loc_dict, k_data_count_dict = K_Means_Clustering(hist_dict)
 
-	# If using a control, divide experimental % total read counts by control, store in path_dict_exp
-	path_dict_exp = {}
-	path_dict_control = {}
-	if control != "":
-		# Find % total read counts for experimental without re-reading the SAM file
-		path_dict_exp = {win: {} for win in win_list}
-		
-		# Read in paths if path_dict is empty for a particular window
-		# (this happens when paths were previously generated for all chromosomes for that window)
-		for win in win_list:
-			if path_dict[win] == {}:
-				for chr in chr_list:
-					path_i_fn = os.path.join(outdir, str(win) + "bp-window/" + str(chr) + "_obs.txt")
-					with open(path_i_fn) as infile:
-						path = infile.readline()
-						path = path.split(' ')
-						path_dict[win][chr] = path
-		total_reads = 0
-		### FOLLOWING IS WORK IN PROGRESS. PROBABLY DOES NOT WORK PROPERLY. ###
-		for chr in chr_list:
-			for win in win_list:
-				import pdb # Delete me
-				pdb.set_trace() # Delete me
-				total_reads += sum([int(i) for i in path_dict[win][chr]])
-		
-		for chr in chr_list:
-			for win in win_list:
-				pct_list = [(int(i)+1)/total_reads for i in path_dict[win][chr]]
-				path_dict_exp[win][chr] = pct_list
-		
-		hist_dict_control, path_dict_control = SAM_to_wincov(control, win_list, chr_list, outdir, "True")
-		for win in win_list:
-			for chr in chr_list:
-				path_dict_control[win][chr] = path_dict_control[win][chr].split(' ')
-				path_dict_exp[win][chr] = {i: float(path_dict_exp[win][chr][i]) / float(path_dict_control[win][chr][i]) for i in range(0,len(path_dict_exp[win][chr]))}
-		path_dict_control = {}
-	
 	# Cycle over each window, chromosome, and threshold value combination provided and run HMM for each combination
 	for win in win_list:
 		for chr in chr_list:
-			for threshold_count in temp_t_count[win][chr]:
-				# Create an HMM parameter file (poisson probabilities of given # of reads in a window based on duplication status of that window)
-				threshold_count = Dist_to_params(states, singlecopy_lambda[win][chr], trans_prob, threshold_count, hist_dict[win][chr], win, chr, sam, outdir)
-				
-				# Run HMM using generated parameter file and observation file
-				HMM_Dup_Search(outdir, tp_positions, chr, win, threshold_count, singlecopy_lambda[win][chr], states, path_dict_exp)
+			#for threshold_count in temp_t_count[win][chr]:
+			# Create an HMM parameter file (poisson probabilities of given # of reads in a window based on duplication status of that window)
+			threshold_count = Dist_To_Params(hist_dict[win][chr], k_cluster_count_dict[win][chr], k_loc_dict[win][chr], k_data_count_dict[win][chr], win, chr, sam, outdir)
+			
+			# Run HMM using generated parameter file and observation file
+			HMM_Dup_Search(outdir, tp_positions, chr, win, threshold_count, k_loc_dict[win][chr], k_data_count_dict[win][chr])
 
 def SAM_to_wincov(sam_file, win_list, chr_list, outdirpart, control_use):
 	# Check to see if, for a given window size, all chromosomes have already had their
@@ -489,7 +634,7 @@ def SAM_to_wincov(sam_file, win_list, chr_list, outdirpart, control_use):
 	return(hist_dict, path_dict)
 
 # Grab command line options
-sam, control, gff, chr, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath = Command_line()
+sam, gff, chr, win_list, outdir, Rpath = Command_line()
 
 # Determine the names of chromosomes and their lengths
 chr_len = SAM.Chr_Lengths(sam)
@@ -501,4 +646,4 @@ tp_positions = Grab_Transposons(gff, chr_len)
 # Generate the necessary data to perform an HMM-based duplication search,
 # then run the HMM on these parameters and observations.
 # Detailed commentary is provided within sub-routines
-Prepare_HMM(sam, control, tp_positions, chr_len, chr, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath)
+Prepare_HMM(sam, tp_positions, chr_len, chr, win_list, outdir, Rpath)
