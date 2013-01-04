@@ -344,11 +344,6 @@ def Reads_Per_Gene(sam_file, gff_genes_dict):
                 if (chr, i) in gff_genes_dict.gene_nuc_dict.keys():
                     gene_counter[gff_genes_dict.gene_nuc_dict[(chr,i)]] += 1
                     break
-            #for gene_name, [gene_chr, start_pos, end_pos] in gff_genes_dict.gene_dict.items():
-            #    if chr == gene_chr:
-            #        if (spos >= start_pos and spos <= end_pos) or (epos >= start_pos and epos <= end_pos):
-            #            gene_counter[gene_name] += 1
-            #            break
     infile.close()
     return(gene_counter)
 
