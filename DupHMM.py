@@ -4,115 +4,115 @@ import argparse, re, random, os, subprocess, sys
 from collections import Counter, OrderedDict
 from math import exp, factorial, log, lgamma, fabs
 import SAM
-import pdb # Delete me
 verbose = False
 
 # DupHMM.py runs a duplication-finding HMM on a SAM file. The SAM file is first broken up into user-specified window sizes,
 #	  reads mapping per-window counted, and a Poisson regression is performed on the resulting histogram of count data. This Poisson lambda
 #	  value is then used to generate a HMM parameter file, which the duplication searching HMM then uses to identify duplicated windows.
 
-def Cluster_Set_Group_Data(cluster_set, hist_dict, max_reads):
+def Cluster_Group_Assign_Data_Points(cluster_group, hist_dict, max_reads):
 	# This function groups data points to the appropriate cluster point and returns the data point-cluster point distance sum
 	
-	data_count_dict = Counter()
-	optimum_cluster_dists = {cluster: [] for cluster in cluster_set} # Value = List containing (data point-cluster distance**2 * freq)
+	data_count_dict = Counter({cluster: 0 for cluster in cluster_group})
+	optimum_cluster_dists = {cluster: [] for cluster in cluster_group} # Value = List containing (data point-cluster distance**2 * freq)
 	for data_point, freq in hist_dict.items():
 		# Cycle through each data point, finding which cluster point each is closest to
 		# and storing (distance * freq) to that cluster's list of data points
-		min_cluster = ""				# Will hold closest cluster to data point. -1 is a default 'not assigned yet' value
-		min_cluster_dist = max_reads+1	# Will hold closest cluster's distance from data point
-		for cluster_point in cluster_set:
-			data_cluster_dist = fabs(data_point - cluster_point)
+		min_cluster = -1												# Will hold closest cluster to data point. -1 is a default 'not assigned yet' value
+		min_cluster_dist = (fabs(data_point - cluster_group[0])+1)**2+1	# Will hold closest cluster's distance from data point. Default is larger than 1st entry
+		#min_cluster_dist = (data_point - cluster_group[0])**2+1	# Will hold closest cluster's distance from data point. Default is larger than 1st entry
+		for cluster_point in cluster_group:
+			data_cluster_dist = (fabs(data_point - cluster_point)+1)**2
+			#data_cluster_dist = (data_point - cluster_point)**2
 			if data_cluster_dist < min_cluster_dist:
 				min_cluster_dist = data_cluster_dist
 				min_cluster = cluster_point
 		optimum_cluster_dists[min_cluster].append(min_cluster_dist * freq)
-		data_count_dict[min_cluster] += 1
+		data_count_dict[min_cluster] += freq
 	
 	# Sum up all the data point-cluster point distances for each cluster.
-	# This sum will be used as a 'fitness' value for this set of clusters.
+	# This sum will be used as a 'fitness' value for this group of clusters.
 	dist_sum = 0
-	for cluster_point in cluster_set:
+	for cluster_point in cluster_group:
 		dist_sum += sum( [min_cluster_dist for min_cluster_dist in optimum_cluster_dists[cluster_point]] )
 	return(dist_sum, data_count_dict)
 
-def Cluster_Mutate(cluster_set, small_mut_freq, large_mut_freq, max_reads):
+def Cluster_Mutate(cluster_group, small_mut_freq, large_mut_freq, max_reads):
 	# With low frequency , shift cluster points a bit
-	# Maximum small mutation shift distance is 0.1% of maximum number of reads per window possible
-	# Maximum large mutation shift distance is 1% of maximum number of reads per window possible
+	# Maximum small mutation shift distance is 1% of maximum number of reads per window possible
+	# Maximum large mutation shift distance is 2.5% of maximum number of reads per window possible
 	
-	new_cluster_set = cluster_set
-	for i in range(len(cluster_set)):
+	new_cluster_group = cluster_group
+	for i in range(len(cluster_group)):
 		random_value = random.random()
 		shift_dist = 0
 		if random_value < large_mut_freq:
-			shift_dist = int(random.randrange(int(2 * max_reads*0.01)) - max_reads*0.01)
+			shift_dist = int(random.randrange(int(2 * max_reads*0.025)) - max_reads*0.025)
 		elif random_value < small_mut_freq:
-			shift_dist = int(random.randrange(int(2 * max_reads*0.001)) - max_reads*0.001)
+			shift_dist = int(random.randrange(int(2 * max_reads*0.01)) - max_reads*0.01)
 		if shift_dist > 0:
-			if new_cluster_set[i] + shift_dist <= max_reads:
-				new_cluster_set[i] += shift_dist
+			if new_cluster_group[i] + shift_dist <= max_reads:
+				new_cluster_group[i] += shift_dist
 			else:
-				new_cluster_set[i] = max_reads
-		else:
-			if new_cluster_set[i] + shift_dist >= 0:
-				new_cluster_set[i] += shift_dist
+				new_cluster_group[i] = max_reads
+		elif shift_dist < 0:
+			if new_cluster_group[i] + shift_dist > 0:
+				new_cluster_group[i] += shift_dist
 			else:
-				new_cluster_set[i] = 0
-	new_cluster_set = sorted(new_cluster_set)
-	return new_cluster_set
+				new_cluster_group[i] = 0
+	new_cluster_group = sorted(new_cluster_group)
+	return new_cluster_group
 
-def Cluster_Next_Generation(cluster_set_list, hist_dict, breeding_individuals, small_mut_freq, large_mut_freq, k, max_reads):
+def Cluster_Next_Generation(cluster_group_list, hist_dict, breeding_individuals, total_individuals, small_mut_freq, large_mut_freq, k, max_reads):
 	# Create a new generation of cluster points given a breeding population of clusters
 	
-	# From the previous generation's 100 sets of k # of clusters, pick the top cluster sets which
+	# From the previous generation's total_individuals groups of k # of clusters, pick the top cluster groups which
 	# have the lowest data point-cluster point distance sum to populate the next generation
-	next_gen_cluster_set_list = sorted(cluster_set_list, key = lambda cluster_set_list: cluster_set_list[1])[:breeding_individuals]
+	next_gen_cluster_group_list = sorted(cluster_group_list, key = lambda cluster_group_list: cluster_group_list[1])[:breeding_individuals]
 	
 	# With low frequency, shift breeding population cluster points a bit
-	for i in range(len(next_gen_cluster_set_list)):
-		for cluster_set, dist_sum, data_count_dict in next_gen_cluster_set_list:
-			new_cluster_set = Cluster_Mutate(cluster_set, small_mut_freq, large_mut_freq, max_reads)
-			if cluster_set != new_cluster_set:
-				new_dist_sum, new_data_count_dict = Cluster_Set_Group_Data(new_cluster_set, hist_dict, max_reads)
-				next_gen_cluster_set_list[i] = [new_cluster_set, new_dist_sum, new_data_count_dict]
+	for i in range(len(next_gen_cluster_group_list)):
+		cluster_group, dist_sum, data_count_dict = next_gen_cluster_group_list[i]
+		new_cluster_group = Cluster_Mutate(cluster_group, small_mut_freq, large_mut_freq, max_reads)
+		if cluster_group != new_cluster_group:
+			new_cluster_set = set(new_cluster_group) # Sets do not allow for duplicate clusters
+			if len(new_cluster_set) == len(new_cluster_group):
+				new_dist_sum, new_data_count_dict = Cluster_Group_Assign_Data_Points(new_cluster_group, hist_dict, max_reads)
+				next_gen_cluster_group_list[i] = [new_cluster_group, new_dist_sum, new_data_count_dict]
 	
-	# Create (100-#_of_breeding_clusters) individuals. Their cluster points will result from 'crossovers' among the
+	# Create (total_individuals-#_of_breeding_clusters) individuals. Their cluster points will result from 'crossovers' among the
 	# breeding individuals. The next generation individuals are also subject to 'mutational' position drifting
 	cluster_list = []
-	for cluster_set, dist_sum, data_count_dict in next_gen_cluster_set_list:
-		for cluster in cluster_set:
+	for cluster_group, dist_sum, data_count_dict in next_gen_cluster_group_list:
+		for cluster in cluster_group:
 			cluster_list.append(cluster)
 	
-	for i in range(breeding_individuals, 100):
-		new_cluster_set = random.sample(cluster_list,k)
-		new_cluster_set = Cluster_Mutate(new_cluster_set, small_mut_freq, large_mut_freq, max_reads)
-		next_gen_cluster_set_list.append([new_cluster_set, 0])
-		
-		# Avoid recalculating dist_sum if possible. Look to see if cluster_set's dist_sum has already been calculated
-		need_dist_sum = True
-		for cluster_set, dist_sum, data_count_dict in cluster_set_list:
-			if new_cluster_set == cluster_set:
-				next_gen_cluster_set_list[i] = [cluster_set, dist_sum, data_count_dict]
-				need_dist_sum = False
-				break
-		if need_dist_sum:
-			new_dist_sum, new_data_count_dict = Cluster_Set_Group_Data(new_cluster_set, hist_dict, max_reads)
-			next_gen_cluster_set_list[i] = [new_cluster_set, new_dist_sum, new_data_count_dict]
-
-	return next_gen_cluster_set_list
+	for i in range(breeding_individuals, total_individuals):
+		unique_indiv_created = False
+		while unique_indiv_created == False:
+			new_cluster_group = random.sample(cluster_list,k)
+			new_cluster_mutated_group = Cluster_Mutate(new_cluster_group, small_mut_freq, large_mut_freq, max_reads)
+			new_cluster_mutated_set = set(new_cluster_mutated_group) # Sets do not allow for duplicate clusters
+			if len(new_cluster_mutated_set) == len(new_cluster_mutated_group):
+				new_dist_sum, new_data_count_dict = Cluster_Group_Assign_Data_Points(new_cluster_mutated_group, hist_dict, max_reads)
+				next_gen_cluster_group_list.append([new_cluster_mutated_group, new_dist_sum, new_data_count_dict]) # Note: mutated group may or may not be mutated
+				unique_indiv_created = True
+	
+	next_gen_cluster_group_list = sorted(next_gen_cluster_group_list, key = lambda next_gen_cluster_group_list: next_gen_cluster_group_list[1])
+	
+	return next_gen_cluster_group_list
 
 def Command_line():
 	parser = argparse.ArgumentParser(description="DupHMM.py runs a duplication-finding HMM on a SAM file. The SAM file is first broken up into user-specified window sizes, \
 									 reads mapping per-window counted, and a Poisson regression is performed on the resulting histogram of count data. This Poisson lambda \
 									 value is used to generate a HMM parameter file, which the duplication searching HMM then uses.")
-	parser.add_argument('-sam', default="Data/Sue/sue1/single_bp_preprocess/set5/libSUE1_set5_aln_Aa_Filtered.sam.gz", type=str, help='SAM filename containing reads for the HMM to run on.', metavar='SAMFilename')
-	parser.add_argument('-gff', default="../Thalyrata.gff", type=str, help='GFF file for the reference genome. Used to annotate regions in the results which contain transposons. This makes spotting false positives easier (Default="../TAIR9_GFF3_genes_transposons.gff").', metavar='GFFFile')
+	parser.add_argument('-sam', default="Data/Sue/sue1/single_bp_preprocess/set5/libSUE1_set5_aln_Aa_Filtered.sam.gz", type=str, help='SAM filename for DupHMM to run on.', metavar='SAMFilename')
+	parser.add_argument('-gff', default="../Thalyrata.gff", type=str, help='GFF file for the reference genome. Used to annotate regions in the results which contain transposons. This makes spotting false positives easier.', metavar='GFFFile')
 	parser.add_argument('-chr', default="AtChr5", type=str, help='Chromosome to run HMM on (Default=Run HMM on all chromosomes). To look at >1 chromosome but not all chromosomes, provide them in a comma-delimited format: e.g. "Chr1,Chr2"', metavar='Chromosome')
-	parser.add_argument('-w', default="500", type=str, help='Window size the HMM will use, in bps (Default=2500). To look at multiple windows, provide them in a comma-delimited format: e.g. "1000,2000,2500,3000".', metavar='Window')
-	parser.add_argument('-v', help='')
-	parser.add_argument('-o', default="Output/DupHMM_sue1_set5_AaFiltered_Kmeans_clustering", type=str, help='Output directory for HMM results (Default="Output/DupHMM_sue1_set5_AaFiltered")', metavar='OutputDir')
-	parser.add_argument('-R', default="", type=str, help="Directory where R is located. This only needs to be entered once, as the path is then saved in 'Rpath.txt'. Your R installation needs to have the 'MASS' package installed.", metavar='RPath')
+	parser.add_argument('-w', default="500", type=str, help='Window size the HMM will use, in bps (Default=500). To look at multiple windows, provide them in a comma-delimited format: e.g. "500,2000,2000,2500".', metavar='Window')
+	parser.add_argument('-v', action='store_true', help='Turns on verbose output for k-means clustering')
+	parser.add_argument('-o', default="Output/DupHMM_sue1_set5_AaFiltered_Kmeans_clustering", type=str, help='Output directory for DupHMM', metavar='OutputDir')
+	parser.add_argument('-R', default="", type=str, help="Directory where R is located. This only needs to be entered once, as the path is then saved in 'Rpath.txt'. NOTE: Your R installation must have the 'MASS' package installed.", metavar='RPath')
 	
 	args = parser.parse_args()
 	sam = args.sam
@@ -120,12 +120,13 @@ def Command_line():
 	chr = args.chr
 	win_list = args.w
 	win_list = [int(entry) for entry in win_list.split(',')]
+	verbose = args.v # PROPOGATE THIS THROUGHOUT THE PROGRAM!
 	outdir = args.o
 	if outdir[-1:] == "\"": outdir = outdir[:-1]
 	Rpath = args.R
 	if Rpath[-1:] == "\"": Rpath = Rpath[:-1]
 	#Rpath = r"/share/apps/R-2.15.0/bin/Rscript"
-	#Rpath = r"C:/Program Files/R/R-2.15.0/bin/x64/Rscript.exe"
+	#Rpath = r"C:/Program Files/R/R-2.15.2/bin/x64/Rscript.exe"
 	
 	# Determine the path for R installation
 	if Rpath == "":
@@ -378,12 +379,12 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, t_count, k_loc_dict, k_data_c
 def K_Means_Clustering(hist_dict):
 	# K_Means_Clustering, when given a reads-per-window histogram, attempts to find the best possible
 	# clustering of this data to some number of groups 'k'. This is accomplished by using a genetic
-	# algorithm. First, a randomized set of k clustering points is created 100 times, representing the
-	# 'initial population'. These sets of clusters are scored based on the combined squared sum of the
-	# data point-cluster point distances. Sets of clustering points are considered to be the 'most fit'
-	# based on how low this combined sum is. From the initial population of 100 cluster sets, the top few are
-	# chosen to pass on to the next generation. A population of 100 sets is created for the 2nd generation,
-	# with the points in each set being randomly chosen cluster points from the top cluster sets in the 1st generation.
+	# algorithm. First, a randomized group of k clustering points is created total_individuals times, representing the
+	# 'initial population'. These groups of clusters are scored based on the combined squared sum of the
+	# data point-cluster point distances. Groups of clustering points are considered to be the 'most fit'
+	# based on how low this combined sum is. From the initial population of total_individuals cluster groups, the top few are
+	# chosen to pass on to the next generation. A population of total_individuals groups is created for the 2nd generation,
+	# with the points in each group being randomly chosen cluster points from the top cluster groups in the 1st generation.
 	# Some 'mutation' may occur: with low frequency, the positioning of a cluster can change up to +/- 0.1% of the
 	# maximum number of reads-per-window possible. With some lower frequency, the positioning of a cluster can
 	# change up to a larger value of +/- 1%. This process of picking the most fit individuals to continue on to a new
@@ -399,9 +400,12 @@ def K_Means_Clustering(hist_dict):
 	# points after the genetic algorithm has reached a consensus, and noting that if two clustering points
 	# are excessively close to one another (<5 apart), we have likely exceeded the optimum k value.
 	
-	small_mut_freq = 0.03
+	# Tweakable variables
+	small_mut_freq = 0.02
 	large_mut_freq = 0.01
-	breeding_individuals = 10
+	breeding_individuals = 20
+	total_individuals = 300
+	total_generations = 300
 	
 	# Will store the optimum number of k cluster points to be used for each win/chr combo
 	k_cluster_count_dict = {win: Counter() for win in hist_dict} 
@@ -434,111 +438,103 @@ def K_Means_Clustering(hist_dict):
 			# again be set as the ideal number of clusters. This multiplication by k of the sum is simply a penalty
 			# score that prevents k from increasing far too high.
 			
-			# k_loc_dict_temp will hold optimum cluster set and the number of grouped data points for each k value
+			# best_cluster_group_for_each_k will hold optimum cluster group and the number of assigned data points for each k value
 			# until optimum k is determined. Optimum k's clusters will be stored in k_loc_dict
-			k_loc_dict_temp = {}
+			best_cluster_group_for_each_k = {}
 			
 			k = 0
-			while k < 200:
+			while k < 50:
 				k += 1
 				break_for_next_k = False
-				initial_pop_attempt = 0
-				# In the case that no optimized consensus of k-means clustering can be reached, the following stores the best cluster sets from 3 attempts
-				gen_100_cluster_sets = {1: [], 2: [], 3: []}
-				while initial_pop_attempt < 3:
-					initial_pop_attempt += 1
-					
-					# Generate an initial population of 100 sets of k # of clusters, with each cluster assigned a
+				initial_pop_attempt = 1
+				while True:
+					# Generate an initial population of total_individuals groups of k # of clusters, with each cluster assigned a
 					# random integer position between the minimum and maximum possible values for reads mapping per window
-					cluster_set_list = [] # Key = Cluster set points, Value = Sum of data point-cluster point distances
-					for i in range(100):
-						cluster_set = []
+					cluster_group_list = []
+					for i in range(total_individuals):
+						cluster_group = []
 						for j in range(k):
-							cluster_set.append(random.randrange(min_reads,max_reads))
-						cluster_set = sorted(cluster_set)
+							cluster_group.append(random.randrange(min_reads,max_reads))
+						cluster_group = sorted(cluster_group)
 						dist_sum = 0 # Will hold total distance of each cluster point from their data points
 						data_count_dict = Counter()
 						if k == 1:
 							# Code optimized for when only one cluster point is used
-							for cluster_point in cluster_set:
+							for cluster_point in cluster_group:
 								dist_sum += sum( [(data_point - cluster_point)**2 * freq for data_point, freq in hist_dict[win][chr].items()] )
-								data_count_dict[cluster_point] = sum( [x for x, freq in hist_dict[win][chr].items() for i in range(freq)] )
+								data_count_dict[cluster_point] = sum( [freq for freq in hist_dict[win][chr].values()] )
 						else:
 							# Code for when >1 clusters are present. Data points must be placed into the closest cluster
-							dist_sum, data_count_dict = Cluster_Set_Group_Data(cluster_set, hist_dict[win][chr], max_reads)
-						cluster_set_list.append([cluster_set, dist_sum, data_count_dict])
+							dist_sum, data_count_dict = Cluster_Group_Assign_Data_Points(cluster_group, hist_dict[win][chr], max_reads)
+						cluster_group_list.append([cluster_group, dist_sum, data_count_dict])
 					
 					# Iteratively create new generations given the most successful individuals in the previous generation.
-					# Do not let this iterative process continue beyond 100 generations.
+					# Do not let this iterative process continue beyond the total allowable generations. If this limit is
+					# reached, a new initial population will be created and the iterative process will begin again.
 					gen_number = 1
-					prev_gen_cluster_set_list = cluster_set_list
-					while gen_number < 100:
+					prev_gen_cluster_group_list = cluster_group_list
+					while gen_number < total_generations:
 						gen_number += 1
-						cluster_set_list = Cluster_Next_Generation(cluster_set_list, hist_dict[win][chr], breeding_individuals, small_mut_freq, large_mut_freq, k, max_reads)
-						for i in range(len(cluster_set_list)):
-							cluster_set, dist_sum, data_count_dict = cluster_set_list[i]
-							if dist_sum == 0: # If dist_sum hasn't been saved from a previous calculation, re-calculate
-								dist_sum, data_count_dict = Cluster_Set_Group_Data(cluster_set, hist_dict[win][chr], max_reads)
-								cluster_set_list[i] = [cluster_set, dist_sum, data_count_dict]
+						cluster_group_list = Cluster_Next_Generation(cluster_group_list, hist_dict[win][chr], breeding_individuals, total_individuals, small_mut_freq, large_mut_freq, k, max_reads)
 						
 						# Check several criteria to see if the genetic algorithm has reached a consensus on cluster location
 						# If so, save the single highest scoring cluster for this k value, then check to see if previous k values
 						# scored better. If so, set k-1 as the optimum clustering value. If not, continue increasing k.
 						
-						# 1) Check to see if the top 10 scoring cluster sets are identical to the previous generation
-						prev_gen_tmp = [cluster_set for cluster_set, dist_sum, data_point_dict in sorted(prev_gen_cluster_set_list, key = lambda prev_gen_cluster_set_list: prev_gen_cluster_set_list[1])[:breeding_individuals]]
-						total_matches = 0
-						for cluster_set, dist_sum, data_point_dict in sorted(cluster_set_list, key = lambda cluster_set_list: cluster_set_list[1])[:breeding_individuals]:
-							if cluster_set in prev_gen_tmp:
-								total_matches += 1
-						if total_matches == breeding_individuals:
-							best_cluster_set = sorted(cluster_set_list, key = lambda cluster_set_list: cluster_set_list[1])[0]
-							k_loc_dict_temp[k] = best_cluster_set
-							break_for_next_k = True
-							print("Consensus reached for k=", str(k), " in ", gen_number-1, " generations due to identity to previous generation.\n",
-								  str(best_cluster_set), "\n",sep='') # Delete me
-							break
+						# 1) For the beginning few generations, check to see if the top breeding individuals have cluster groups that are
+						#	 identical to each other and to the previous generation
+						if gen_number < total_generations / 3:
+							prev_gen_tmp = [cluster_group for cluster_group, dist_sum, data_point_dict in sorted(prev_gen_cluster_group_list, key = lambda prev_gen_cluster_group_list: prev_gen_cluster_group_list[1])[:breeding_individuals]]
+							total_matches = 0
+							for cluster_group, dist_sum, data_point_dict in cluster_group_list[:breeding_individuals]:
+								if cluster_group in prev_gen_tmp and cluster_group == cluster_group_list[0][0]:
+									total_matches += 1
+							if total_matches == breeding_individuals:
+								best_cluster_group = cluster_group_list[0]
+								best_cluster_group_for_each_k[k] = best_cluster_group
+								break_for_next_k = True
+								print("Consensus reached for k=", str(k), " in ", gen_number-1, " generations due to identity among breeding individuals to themselves and to the previous generation.\n",
+									  str(best_cluster_group), "\n",sep='') # Delete me
+								break
 						
-						# 2) Check to see if the average distance between sets of cluster points is <1% of the maximum number of reads possible (up to 95th percentile of reads)
-						avg_dist = 0
-						for i in range(1,len(cluster_set_list)):
-							for j in range(k):
-								cur_cluster = int(cluster_set_list[i][0][j])
-								first_cluster = int(cluster_set_list[0][0][j])
-								avg_dist += fabs(cur_cluster - first_cluster)
-						avg_dist /= ( (len(cluster_set_list) - 1) * k )
-						if avg_dist < 0.01 * max_reads_95th:
-							best_cluster_set = sorted(cluster_set_list, key = lambda cluster_set_list: cluster_set_list[1])[0]
-							k_loc_dict_temp[k] = best_cluster_set
-							break_for_next_k = True
-							print("Consensus reached for k=", str(k), " in ", gen_number, " generations due to negligible cluster point changes.\n",
-								  str(best_cluster_set), "\n",sep='') # Delete me
-							break
+						# 2) If the program has been running for a while without finding a perfect consensus among the top breeding individuals,
+						#	 start checking to see if the average distance between cluster points groups among the breeding individuals is <2%
+						#	 of the 95th percentile number of reads possible. If so, this indicates very little change is occurring among the
+						#	 top individuals, so we may as well consider this list converged.
+						elif gen_number > total_generations / 3:
+							avg_dist = 0
+							for i in range(1,breeding_individuals):
+								for j in range(k):
+									cur_cluster = int(cluster_group_list[i][0][j])
+									first_cluster = int(cluster_group_list[0][0][j])
+									avg_dist += fabs(cur_cluster - first_cluster)
+							avg_dist /= ( (breeding_individuals - 1) * k )
+							if avg_dist < 0.02 * max_reads_95th:
+								best_cluster_group = cluster_group_list[0]
+								best_cluster_group_for_each_k[k] = best_cluster_group
+								break_for_next_k = True
+								print("Consensus reached for k=", str(k), " in ", gen_number, " generations due to negligible cluster point changes.\n",
+									  str(best_cluster_group), "\n",sep='') # Delete me
+								break
 						
-						prev_gen_cluster_set_list = cluster_set_list
+						prev_gen_cluster_group_list = cluster_group_list
 					
 					if break_for_next_k == True:
-						# gen_number < 100. The clusters converged.
+						# If break_for_next_k == True:
+						# gen_number < total_generations. The clusters converged.
+						# If break_for_next_k == False:
+						# gen_number == total_generations. The clusters did not converge, so create a new initial population and try again.
 						break
-					else:
-						# gen_number == 100. The clusters did not converge, so create a new initial population and try again.
-						# Save the optimal cluster set in case convergence fails 3 times; user may want to know what the closest to optimal positions were.
-						gen_100_cluster_sets[initial_pop_attempt] = sorted(cluster_set_list, key = lambda cluster_set_list: cluster_set_list[1])[0]
+					
+					initial_pop_attempt += 1
+					print("Failed to converge within ", str(total_generations), " generations. Starting Try #", str(initial_pop_attempt), " with a new initial population.")
 				
-				if initial_pop_attempt == 3 and k not in k_loc_dict_temp:
-					# If 3 initial populations were created and not one resulted in a convergence of cluster points, inform user that
-					# the program failed to converge, print out the best clusters from each attempt, and gracefully exit the program
-					print("Genetic algorithm was unable to reach a convergence on an optimized k-means clustering of the data points for k=", str(k),
-						  " even after generating 3 random initial populations, running each for 100 generations. The best cluster from each generation is presented below:\n\n",sep='')
-					for attempt_num, cluster_set in sorted(gen_100_cluster_sets.items()):
-						print("Attempt #", str(attempt_num), ": ", str(cluster_set), "\n", sep='')
-					sys.exit(0)
-				
-				elif k > 1 and k_loc_dict_temp[k-1][1] / (k-1) < k_loc_dict_temp[k][1] / k:
+				if k > 1 and log(best_cluster_group_for_each_k[k-1][1] * (k-1)) < log(best_cluster_group_for_each_k[k][1] * k):
 					# Determine whether or not k-1 dist_sum (normalized for the number of clusters used) was the optimal value for k.
-					# If so, halt genetic algorithm and return the k-1 cluster sets to be used for the creation of HMM probabilities.
+					# If so, halt genetic algorithm and return the k-1 cluster groups to be used for the creation of HMM probabilities.
 					k_cluster_count_dict[win][chr] = k-1
-					k_loc_dict[win][chr] = k_loc_dict_temp[k-1]
+					k_loc_dict[win][chr] = best_cluster_group_for_each_k[k-1]
+					print("k=", str(k), " is optimal:\n", str(best_cluster_group_for_each_k[k-1]), "\n", sep='')
 	
 	return(k_cluster_count_dict, k_loc_dict)
 
