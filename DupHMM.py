@@ -40,16 +40,17 @@ def Cluster_Mutate(cluster_group, small_mut_freq, large_mut_freq, max_reads):
 	# With low frequency , shift cluster points a bit
 	# Maximum small mutation shift distance is 0.5% of maximum number of reads per window possible
 	# Maximum large mutation shift distance is 1% of maximum number of reads per window possible
+	small_mut_dist = 0.005
+	large_mut_dist = 0.01
 	
 	new_cluster_group = cluster_group
-	# Chance to mutate each individual cluster point
 	for i in range(len(cluster_group)):
 		random_value = random.random()
 		shift_dist = 0
 		if random_value < large_mut_freq:
-			shift_dist = int(random.randrange(int(2 * max_reads*0.01)) - max_reads*0.01)
+			shift_dist = int(random.randrange(int(2 * max_reads*large_mut_dist)) - max_reads*large_mut_dist)
 		elif random_value < small_mut_freq:
-			shift_dist = int(random.randrange(int(2 * max_reads*0.005)) - max_reads*0.005)
+			shift_dist = int(random.randrange(int(2 * max_reads*small_mut_dist)) - max_reads*small_mut_dist)
 		if shift_dist > 0:
 			if new_cluster_group[i] + shift_dist <= max_reads:
 				new_cluster_group[i] += shift_dist
@@ -60,30 +61,7 @@ def Cluster_Mutate(cluster_group, small_mut_freq, large_mut_freq, max_reads):
 				new_cluster_group[i] += shift_dist
 			else:
 				new_cluster_group[i] = 0
-	
-	# Chance to mutate one among the group of cluster points
-	#shift_dist = 0
-	#mutate = False
-	#random_value = random.random()
-	#if random_value < large_mut_freq:
-	#	shift_dist = int(random.randrange(int(2 * max_reads*0.01)) - max_reads*0.01)
-	#	mutate = True
-	#elif random_value < small_mut_freq:
-	#	shift_dist = int(random.randrange(int(2 * max_reads*0.005)) - max_reads*0.005)
-	#	mutate = True
-	#if mutate == True:
-	#	random_cluster_point = random.randint(0,len(cluster_group)-1)
-	#	if shift_dist > 0:
-	#		if new_cluster_group[random_cluster_point] + shift_dist <= max_reads:
-	#			new_cluster_group[random_cluster_point] += shift_dist
-	#		else:
-	#			new_cluster_group[random_cluster_point] = max_reads
-	#	elif shift_dist < 0:
-	#		if new_cluster_group[random_cluster_point] + shift_dist > 0:
-	#			new_cluster_group[random_cluster_point] += shift_dist
-	#		else:
-	#			new_cluster_group[random_cluster_point] = 0
-	
+
 	new_cluster_group = sorted(new_cluster_group)
 	return new_cluster_group
 
@@ -101,14 +79,14 @@ def Cluster_Next_Generation(cluster_group_list, hist_dict, breeding_individuals,
 	large_mut_freq /= k
 	
 	# With low frequency, shift breeding population cluster points a bit
-	for i in range(len(next_gen_cluster_group_list)):
-		cluster_group, dist_sum, data_count_dict = next_gen_cluster_group_list[i]
-		new_cluster_group = Cluster_Mutate(cluster_group, small_mut_freq, large_mut_freq, max_reads)
-		if cluster_group != new_cluster_group:
-			new_cluster_set = set(new_cluster_group) # Sets do not allow for duplicate clusters
-			if len(new_cluster_set) == len(new_cluster_group):
-				new_dist_sum, new_data_count_dict = Cluster_Group_Assign_Data_Points(new_cluster_group, hist_dict, max_reads)
-				next_gen_cluster_group_list[i] = [new_cluster_group, new_dist_sum, new_data_count_dict]
+	#for i in range(len(next_gen_cluster_group_list)):
+	#	cluster_group, dist_sum, data_count_dict = next_gen_cluster_group_list[i]
+	#	new_cluster_group = Cluster_Mutate(cluster_group, small_mut_freq, large_mut_freq, max_reads)
+	#	if cluster_group != new_cluster_group:
+	#		new_cluster_set = set(new_cluster_group) # Sets do not allow for duplicate clusters
+	#		if len(new_cluster_set) == len(new_cluster_group):
+	#			new_dist_sum, new_data_count_dict = Cluster_Group_Assign_Data_Points(new_cluster_group, hist_dict, max_reads)
+	#			next_gen_cluster_group_list[i] = [new_cluster_group, new_dist_sum, new_data_count_dict]
 	
 	# Create (total_individuals-#_of_breeding_clusters) individuals. Their cluster points will result from 'crossovers' among the
 	# breeding individuals. The next generation individuals are also subject to 'mutational' position drifting
@@ -116,11 +94,12 @@ def Cluster_Next_Generation(cluster_group_list, hist_dict, breeding_individuals,
 	for cluster_group, dist_sum, data_count_dict in next_gen_cluster_group_list:
 		for cluster in cluster_group:
 			cluster_list.append(cluster)
+	cluster_set = set(cluster_list)
 	
 	for i in range(breeding_individuals, total_individuals):
 		unique_indiv_created = False
 		while unique_indiv_created == False:
-			new_cluster_group = random.sample(cluster_list,k)
+			new_cluster_group = random.sample(cluster_set,k)
 			new_cluster_mutated_group = Cluster_Mutate(new_cluster_group, small_mut_freq, large_mut_freq, max_reads)
 			new_cluster_mutated_set = set(new_cluster_mutated_group) # Sets do not allow for duplicate clusters
 			if len(new_cluster_mutated_set) == len(new_cluster_mutated_group):
@@ -440,12 +419,12 @@ def K_Means_Clustering(hist_dict):
 	global very_verbose
 	
 	# Tweakable variables
-	small_mut_freq = 0.03
-	large_mut_freq = 0.01
-	breeding_individuals = 15
-	total_individuals = 150
+	small_mut_freq = 0.15
+	large_mut_freq = 0.05
+	breeding_individuals = 10
+	total_individuals = 300
 	total_generations = 300
-	minimum_generations = 25
+	minimum_generations = 3
 	
 	# Will store the optimum number of k cluster points to be used for each win/chr combo
 	k_cluster_count_dict = {win: Counter() for win in hist_dict} 
@@ -487,6 +466,7 @@ def K_Means_Clustering(hist_dict):
 				k += 1
 				break_for_next_k = False
 				initial_pop_attempt = 1
+				past_gen_top_breeders = {} # Will be used to determine when genetic algorithm has converged on the same answer for 3 generations. Key = gen #, Value = Set of top breeders
 				while True:
 					# Generate an initial population of total_individuals groups of k # of clusters, with each cluster assigned a
 					# random integer position between the minimum and maximum possible values for reads mapping per window
@@ -507,38 +487,37 @@ def K_Means_Clustering(hist_dict):
 							# Code for when >1 clusters are present. Data points must be placed into the closest cluster
 							dist_sum, data_count_dict = Cluster_Group_Assign_Data_Points(cluster_group, hist_dict[win][chr], max_reads)
 						cluster_group_list.append([cluster_group, dist_sum, data_count_dict])
+					cluster_group_list = sorted(cluster_group_list, key = lambda cluster_group_list: cluster_group_list[1])
 					
 					# Iteratively create new generations given the most successful individuals in the previous generation.
 					# Do not let this iterative process continue beyond the total allowable generations. If this limit is
 					# reached, a new initial population will be created and the iterative process will begin again.
 					gen_number = 1
-					prev_gen_cluster_group_list = cluster_group_list
+					past_gen_top_breeders[gen_number] = cluster_group_list[:breeding_individuals]
 					while gen_number < total_generations:
 						gen_number += 1
 						cluster_group_list = Cluster_Next_Generation(cluster_group_list, hist_dict[win][chr], breeding_individuals, total_individuals, small_mut_freq, large_mut_freq, k, max_reads)
+						past_gen_top_breeders[gen_number] = cluster_group_list[:breeding_individuals]
+						if gen_number > 3:
+							del past_gen_top_breeders[gen_number-3] # Save memory and time
 						
 						# Check several criteria to see if the genetic algorithm has reached a consensus on cluster location
 						# If so, save the single highest scoring cluster for this k value, then check to see if previous k values
 						# scored better. If so, set k-1 as the optimum clustering value. If not, continue increasing k.
 						
 						# 1) For the beginning few generations, check to see if the top breeding individuals have cluster groups that are
-						#	 identical to each other and to the previous generation
-						if gen_number < total_generations / 3:
-							prev_gen_tmp = [cluster_group for cluster_group, dist_sum, data_point_dict in sorted(prev_gen_cluster_group_list, key = lambda prev_gen_cluster_group_list: prev_gen_cluster_group_list[1])[:breeding_individuals]]
-							total_matches = 0
-							for cluster_group, dist_sum, data_point_dict in cluster_group_list[:breeding_individuals]:
-								if cluster_group in prev_gen_tmp and cluster_group == cluster_group_list[0][0]:
-									total_matches += 1
-								if very_verbose == True:
-									print(str(cluster_group),"\t",str(dist_sum),"\t",str(sorted(data_point_dict.items())))
+						#	 identical to the previous two generations
+						if gen_number < total_generations / 3 and gen_number > 2:
 							if very_verbose == True:
+								for cluster_group, dist_sum, data_point_dict in cluster_group_list[:breeding_individuals]:
+									print(str(cluster_group),"\t",str(dist_sum),"\t",str(sorted(data_point_dict.items())))
 								print("\n")
-							if total_matches == breeding_individuals and gen_number >= minimum_generations:
+							if past_gen_top_breeders[gen_number] == past_gen_top_breeders[gen_number-1] and past_gen_top_breeders[gen_number] == past_gen_top_breeders[gen_number-2] and gen_number >= minimum_generations:
 								best_cluster_group = cluster_group_list[0]
 								best_cluster_group_for_each_k[k] = best_cluster_group
 								break_for_next_k = True
 								if verbose == True or very_verbose == True:
-									print("Consensus reached for k=", str(k), " in ", gen_number, " generations due to identity among breeding individuals to themselves and to the previous generation.\n",
+									print("Consensus reached for k=", str(k), " in ", gen_number, " generations due to identity among breeding individuals to the previous 2 generations.\n",
 											str(best_cluster_group[0]), "\t", str(best_cluster_group[1]), "\t", str(sorted(best_cluster_group[2].items())), "\t", str(log(best_cluster_group_for_each_k[k][1] * k)), "\n",sep='')
 								break
 						
@@ -563,16 +542,14 @@ def K_Means_Clustering(hist_dict):
 											str(best_cluster_group[0]), "\t", str(best_cluster_group[1]), "\t", str(sorted(best_cluster_group[2].items())), "\t",
 											str(log(best_cluster_group_for_each_k[k][1] * k)), "\n",sep='')
 								break
-						
-						prev_gen_cluster_group_list = cluster_group_list
 					
 					if break_for_next_k == True:
 						# If break_for_next_k == True:
 						# gen_number < total_generations. The clusters converged.
-						# If break_for_next_k == False:
-						# gen_number == total_generations. The clusters did not converge, so create a new initial population and try again.
 						break
 					
+					# If break_for_next_k == False:
+					# gen_number == total_generations. The clusters did not converge, so create a new initial population and try again.
 					initial_pop_attempt += 1
 					print("Failed to converge within ", str(total_generations), " generations. Starting Try #", str(initial_pop_attempt), " with a new initial population.")
 				
