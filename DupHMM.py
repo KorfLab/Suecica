@@ -78,16 +78,6 @@ def Cluster_Next_Generation(cluster_group_list, hist_dict, breeding_individuals,
 	small_mut_freq /= k
 	large_mut_freq /= k
 	
-	# With low frequency, shift breeding population cluster points a bit
-	#for i in range(len(next_gen_cluster_group_list)):
-	#	cluster_group, dist_sum, data_count_dict = next_gen_cluster_group_list[i]
-	#	new_cluster_group = Cluster_Mutate(cluster_group, small_mut_freq, large_mut_freq, max_reads)
-	#	if cluster_group != new_cluster_group:
-	#		new_cluster_set = set(new_cluster_group) # Sets do not allow for duplicate clusters
-	#		if len(new_cluster_set) == len(new_cluster_group):
-	#			new_dist_sum, new_data_count_dict = Cluster_Group_Assign_Data_Points(new_cluster_group, hist_dict, max_reads)
-	#			next_gen_cluster_group_list[i] = [new_cluster_group, new_dist_sum, new_data_count_dict]
-	
 	# Create (total_individuals-#_of_breeding_clusters) individuals. Their cluster points will result from 'crossovers' among the
 	# breeding individuals. The next generation individuals are also subject to 'mutational' position drifting
 	cluster_list = []
@@ -117,7 +107,7 @@ def Command_line():
 									 value is used to generate a HMM parameter file, which the duplication searching HMM then uses.")
 	parser.add_argument('-sam', default="Data/Sue/sue1/single_bp_preprocess/set5/libSUE1_set5_aln_Aa_Filtered.sam.gz", type=str, help='SAM filename for DupHMM to run on.', metavar='SAMFilename')
 	parser.add_argument('-gff', default="../Thalyrata.gff", type=str, help='GFF file for the reference genome. Used to annotate regions in the results which contain transposons. This makes spotting false positives easier.', metavar='GFFFile')
-	parser.add_argument('-chr', default="AtChr5", type=str, help='Chromosome to run HMM on (Default=Run HMM on all chromosomes). To look at >1 chromosome but not all chromosomes, provide them in a comma-delimited format: e.g. "Chr1,Chr2"', metavar='Chromosome')
+	parser.add_argument('-chr', default="AtChr5", type=str, help='Chromosome to run HMM on (Default=Run HMM on all chromosomeomosomes). To look at >1 chromosomeomosome but not all chromosomeomosomes, provide them in a comma-delimited format: e.g. "Chr1,Chr2"', metavar='Chromosome')
 	parser.add_argument('-w', default="500", type=str, help='Window size the HMM will use, in bps (Default=500). To look at multiple windows, provide them in a comma-delimited format: e.g. "500,2000,2000,2500".', metavar='Window')
 	parser.add_argument('-o', default="Output/DupHMM_sue1_set5_AaFiltered_Kmeans_clustering", type=str, help='Output directory for DupHMM', metavar='OutputDir')
 	parser.add_argument('-R', default="", type=str, help="Directory where R is located. This only needs to be entered once, as the path is then saved in 'Rpath.txt'. NOTE: Your R installation must have the 'MASS' package installed.", metavar='RPath')
@@ -127,7 +117,7 @@ def Command_line():
 	args = parser.parse_args()
 	sam = args.sam
 	gff = args.gff
-	chr = args.chr
+	chromosome = args.chr
 	win_list = args.w
 	win_list = [int(entry) for entry in win_list.split(',')]
 	global verbose
@@ -153,9 +143,9 @@ def Command_line():
 		with open("Rpath.txt", 'w') as outfile:
 			outfile.write(Rpath)
 	
-	return(sam, gff, chr, win_list, outdir, Rpath)
+	return(sam, gff, chromosome, win_list, outdir, Rpath)
 
-def Dist_To_Params(hist, k_cluster_count, k_loc, k_data_count, win, chr, sam, outdir):
+def Dist_To_Params(hist, k_cluster_count, k_loc, k_data_count, win, chromosome, sam, outdir):
 	# Distribution_to_parameters_file
 	# Converts per-window read count histogram with a Poisson fit to it into
 	# parameters that an HMM can utilize
@@ -201,20 +191,17 @@ def Dist_To_Params(hist, k_cluster_count, k_loc, k_data_count, win, chr, sam, ou
 	total_data_points = sum([point_sum for point_sum in k_data_count.values()])
 	trans_prob_dict = {cluster: {} for cluster in k_loc}
 	for cluster in k_loc:
-		trans_prob_dict[cluster] = {x: 10**(k_data_count[x] / total_data_points * 75) for x in k_loc}
-	for cluster in k_loc:
-		for x in k_loc:
-			trans_prob_dict[cluster][cluster] = 1 - (len(k_loc) - 1) * 10**(k_data_count[x] / total_data_points * 75)
+		trans_prob_dict[cluster] = {x: 10**(-75 - (-75 * k_data_count[x] / total_data_points)) for x in k_loc}
 	
 	# Create parameter file
 	# Call Dist_To_Params_Outline to create the line of text to be written out
 	outline = Dist_To_Params_Outline(k_loc, prob_dict, trans_prob_dict)
 	t_outdir = os.path.join(outdir,str(win) + "bp-window/")
 	if not os.path.exists(t_outdir): os.makedirs(t_outdir)
-	outfilename = os.path.join(t_outdir, str(chr) + "_params.txt")
+	outfilename = os.path.join(t_outdir, str(chromosome) + "_params.txt")
 	with open(outfilename, 'w') as outfile:
 		outfile.write(outline)
-	return(max_value)
+	return()
 
 def Dist_To_Params_Outline(k_loc, prob_dict, trans_prob_dict):
 	# Distribution_to_parameters_file_outline
@@ -223,11 +210,11 @@ def Dist_To_Params_Outline(k_loc, prob_dict, trans_prob_dict):
 	# States and start probabilities
 	# ASCII 65 = 'A'
 	outline = "States:\n"
-	states = [chr(x) for x in range(65,len(k_loc))]
+	states = [chr(x) for x in range(65,65+len(k_loc))]
 	outline += '\n'.join(states)
 	outline += "\n\nStart Probabilities:\n"
-	for i in states:
-		outline += str(i) + "\t" + str(1/len(states)) + "\n"
+	for x in states:
+		outline += str(x) + "\t" + str(1/len(states)) + "\n"
 	
 	# Transition probabilities
 	outline += "\nTransition Probabilities:"
@@ -238,15 +225,16 @@ def Dist_To_Params_Outline(k_loc, prob_dict, trans_prob_dict):
 	
 	# Part of output containing emission probabilities
 	outline += "\n\nEmission Probabilities:\n"
-	for cluster in k_loc:
+	for i in range(65, 65+len(k_loc)):
+		cluster = k_loc[i-65]
+		print(states)
 		prob_list = prob_dict[cluster]
-		print(cluster)
-		outline += str(states[cluster])
+		outline += str(states[i-65])
 		outline2 = ''.join(["\t" + str(i) + "\t" + str(prob_list[i]) + "\n" for i in range(0,len(prob_dict[cluster]))])
 		outline += str(outline2) + "\n"
 	return outline
 
-def Grab_Transposons(gff, chr_len):
+def Grab_Transposons(gff, chromosome_len):
 	pattern = r"(transposable_element_gene|transposable_element)"
 	recomp = re.compile(pattern)
 	pattern2 = r"^ID=(\S+?);"
@@ -255,31 +243,32 @@ def Grab_Transposons(gff, chr_len):
 	if gff != "":
 		# If a GFF file was provided, fill tp_positions dictionary
 		# with transposon positions
-		for chr in chr_len:
-			tp_positions[chr] = []
+		for chromosome in chromosome_len:
+			tp_positions[chromosome] = []
 		with open(gff) as infile:
 			for line in infile:
 				line = line.split("\t")
 				match = recomp.match(line[2])
 				match2 = recomp2.match(line[8])
 				if match and match2:
-					chr = str(line[0])
+					chromosome = str(line[0])
 					name = match2.group(1)
 					spos = int(line[3])
 					epos = int(line[4])
 					type = 2 # Neither transposable_element nor transposable_element_gene
 					if match.group(1) == "transposable_element_gene": type = 1
 					elif match.group(1) == "transposable_element": type = 0
-					tp_positions[chr].append((name, spos,epos, type))
+					tp_positions[chromosome].append((name, spos,epos, type))
 	return tp_positions
 
-def HMM_Dup_Search(folder, tp_positions, chr, win, k_cluster_group_dict, k_data_count_dict):
+def HMM_Dup_Search(folder, tp_positions, chromosome, win, k_cluster_group_dict, k_data_count_dict):
 	# HMM_Dup_search runs the HMM using a Viterbi algorithm written in C++ .
 	# It waits for the HMM run to complete, grabs the HMM results from Viterbi's output, then parses and outputs results.
 	
 	outdir = os.path.join(folder, str(win) + "bp-window/")
-	param_file = os.path.join(outdir, str(chr) + "_params.txt")
-	obs_file = os.path.join(outdir, str(chr) + "_obs.txt")
+	param_file = os.path.join(outdir, str(chromosome) + "_params.txt")
+	obs_file = os.path.join(outdir, str(chromosome) + "_obs.txt")
+	path_file = os.path.join(outdir, str(chromosome) + "_path.txt")
 	
 	# Run Viterbi algorithm written in C++
 	if sys.platform in ["linux","linux2"] or sys.platform in ["darwin", "os2", "os2emx"]:
@@ -298,6 +287,9 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, k_cluster_group_dict, k_data_
 		sys.exit(0)
 	path = HMMRun.communicate()[0].decode("utf-8") # Grab path from Viterbi.exe output
 	path = path[::-1]
+	with open(path_file, 'w') as outfile:
+		outline = "\n".join(x for x in path)
+		outfile.write(outline)
 	
 	# Open up observation file and grab observations for average fold coverage calculations across multiple windows
 	obs_list = []
@@ -309,7 +301,7 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, k_cluster_group_dict, k_data_
 	# If a GFF file was provided, figure out which windows contain transposons
 	tp_windows = {}
 	if tp_positions != {}:
-		for (name, spos, epos, type) in tp_positions[chr]:
+		for (name, spos, epos, type) in tp_positions[chromosome]:
 			spos_for_dict = int(spos // win)
 			epos_for_dict = int(epos // win)
 			try:
@@ -330,8 +322,8 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, k_cluster_group_dict, k_data_
 	# If using a control, include exp:control ratio in output as well
 	all_outlines = []
 	# ASCII 65 = 'A'
-	states = [chr(x) for x in range(65,len(k_loc))]
-	single_copy_lambda = sorted(k_data_point_dict.items(), key = lambda entry: entry[1], reverse=True)[0][0]
+	states = [chr(x) for x in range(65,len(k_cluster_group_dict))]
+	single_copy_lambda = sorted(k_data_count_dict.items(), key = lambda entry: entry[1], reverse=True)[0][0]
 	for state in states:
 		pattern = str(states[state]) + r"{1,}"
 		recomp = re.compile(pattern)
@@ -349,42 +341,20 @@ def HMM_Dup_Search(folder, tp_positions, chr, win, k_cluster_group_dict, k_data_
 						tp_union_list.add((transposon_name, type))
 				transposable_elements = len([name for name, type in tp_union_list if type == 0])
 				transposable_element_genes = len([name for name, type in tp_union_list if type == 1])
-				if len(path_dict_exp_control_ratio.keys()) == 0:
-					# Not using a control
-					all_outlines.append( (chr,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov, transposable_element_genes, transposable_elements) )
-				else:
-					# Using a control
-					exp_control_ratio_avg = round(sum([float(path_dict_exp_control_ratio[win][chr][i]) for i in range(m.start(),m.end()+1)]) / (m.end() - m.start()), 2)
-					all_outlines.append( (chr,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov, transposable_element_genes, transposable_elements, exp_control_ratio_avg) )
+				all_outlines.append( (chromosome,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov, transposable_element_genes, transposable_elements) )
 			else:
 				# If a GFF file was NOT provided, DO NOT include per-window transposon counts in results
-				if len(path_dict_exp_control_ratio.keys()) == 0:
-					# Not using a control
-					all_outlines.append( (chr,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov) )
-				else:
-					# Using a control
-					exp_control_ratio_avg = round(sum([float(path_dict_exp_control_ratio[win][chr][i]) for i in range(m.start(),m.end()+1)]) / (m.end() - m.start()), 2)
-					all_outlines.append( (chr,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov, exp_control_ratio_avg) )
+				all_outlines.append( (chromosome,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov) )
 	
-	outfilename = os.path.join(outdir, str(chr) + "_Results.txt")
+	outfilename = os.path.join(outdir, str(chromosome) + "_Results.txt")
 	all_outlines = sorted(all_outlines, key = lambda entry: (entry[0], entry[1]))
 	with open(outfilename, 'w') as outfile:
 		if tp_windows != {}:
 			# If a GFF file was provided, include per-window transposon counts in results
-			if len(path_dict_exp_control_ratio.keys()) == 0:
-				# Not using a control
-				line = "Chr\tStart_pos\tEnd_pos\tDistance\tState\tFold_Coverage\tTE Genes\tTEs\n"
-			else:
-				# Using a control
-				line = "Chr\tStart_pos\tEnd_pos\tDistance\tState\tFold_Coverage\tTE Genes\tTEs\tExp:Control\n"
+			line = "Chr\tStart_pos\tEnd_pos\tDistance\tState\tFold_Coverage\tTE Genes\tTEs\n"
 		else:
 			# If a GFF file was NOT provided, DO NOT include per-window transposon counts in results
-			if len(path_dict_exp_control_ratio.keys()) == 0:
-				# Not using a control
-				line = "Chr\tStart_pos\tEnd_pos\tDistance\tState\tFold_Coverage\n"
-			else:
-				# Using a control
-				line = "Chr\tStart_pos\tEnd_pos\tDistance\tState\tFold_Coverage\tExp:Control\n"
+			line = "Chr\tStart_pos\tEnd_pos\tDistance\tState\tFold_Coverage\n"
 		outfile.write(line)
 		for line in all_outlines:
 			line = "\t".join([str(x) for x in line]) + "\n"
@@ -419,33 +389,33 @@ def K_Means_Clustering(hist_dict):
 	global very_verbose
 	
 	# Tweakable variables
-	small_mut_freq = 0.15
-	large_mut_freq = 0.05
-	breeding_individuals = 10
+	small_mut_freq = 0.18
+	large_mut_freq = 0.02
+	breeding_individuals = 20
 	total_individuals = 300
-	total_generations = 300
+	total_generations = 500
 	minimum_generations = 3
 	
-	# Will store the optimum number of k cluster points to be used for each win/chr combo
+	# Will store the optimum number of k cluster points to be used for each win/chromosome combo
 	k_cluster_count_dict = {win: Counter() for win in hist_dict} 
 	for win in k_cluster_count_dict:
-		k_cluster_count_dict[win] = {chr: 0 for chr in hist_dict[win]}
+		k_cluster_count_dict[win] = {chromosome: 0 for chromosome in hist_dict[win]}
 	
-	# Will store a list of genetic algorithm-optimized cluster groups for each win/chr combo
+	# Will store a list of genetic algorithm-optimized cluster groups for each win/chromosome combo
 	# as well as the dist_sum value and the number of data points that belong to each cluster
 	k_cluster_group_dict = {win: {} for win in hist_dict}
 	for win in k_cluster_group_dict:
-		k_cluster_group_dict[win] = {chr: [] for chr in hist_dict[win]}
+		k_cluster_group_dict[win] = {chromosome: [] for chromosome in hist_dict[win]}
 	
-	# Find optimum data clustering for each window & chromosome combination
+	# Find optimum data clustering for each window & chromosomeomosome combination
 	for win in hist_dict:
-		for chr in hist_dict[win]:
+		for chromosome in hist_dict[win]:
 			# Remove histogram elements in which a coverage value appears with a frequency of 0, then
-			# calculate the minimum and maximum reads-per-window values that can be found on this chromosome
-			hist_dict[win][chr] = Counter({cov: freq for cov, freq in hist_dict[win][chr].items() if freq != 0})
-			min_reads = min(hist_dict[win][chr].keys())
-			max_reads = max(hist_dict[win][chr].keys())
-			max_reads_95th = sorted(hist_dict[win][chr].keys())[int(len(hist_dict[win][chr])*.95)] # 95th percentile reads-per-window value
+			# calculate the minimum and maximum reads-per-window values that can be found on this chromosomeomosome
+			hist_dict[win][chromosome] = Counter({cov: freq for cov, freq in hist_dict[win][chromosome].items() if freq != 0})
+			min_reads = min(hist_dict[win][chromosome].keys())
+			max_reads = max(hist_dict[win][chromosome].keys())
+			max_reads_95th = sorted(hist_dict[win][chromosome].keys())[int(len(hist_dict[win][chromosome])*.95)] # 95th percentile reads-per-window value
 			
 			# Find the optimum number of k clustering points. The following iteratively runs a genetic algorithm
 			# to optimize the grouping of data points to k clusters for as many k values as is necessary. This
@@ -481,11 +451,11 @@ def K_Means_Clustering(hist_dict):
 						if k == 1:
 							# Code optimized for when only one cluster point is used
 							for cluster_point in cluster_group:
-								dist_sum += sum( [(int(fabs(data_point - cluster_point))+2)**2 * freq for data_point, freq in hist_dict[win][chr].items()] )
-								data_count_dict[cluster_point] = sum( [freq for freq in hist_dict[win][chr].values()] )
+								dist_sum += sum( [(int(fabs(data_point - cluster_point))+2)**2 * freq for data_point, freq in hist_dict[win][chromosome].items()] )
+								data_count_dict[cluster_point] = sum( [freq for freq in hist_dict[win][chromosome].values()] )
 						else:
 							# Code for when >1 clusters are present. Data points must be placed into the closest cluster
-							dist_sum, data_count_dict = Cluster_Group_Assign_Data_Points(cluster_group, hist_dict[win][chr], max_reads)
+							dist_sum, data_count_dict = Cluster_Group_Assign_Data_Points(cluster_group, hist_dict[win][chromosome], max_reads)
 						cluster_group_list.append([cluster_group, dist_sum, data_count_dict])
 					cluster_group_list = sorted(cluster_group_list, key = lambda cluster_group_list: cluster_group_list[1])
 					
@@ -496,7 +466,7 @@ def K_Means_Clustering(hist_dict):
 					past_gen_top_breeders[gen_number] = cluster_group_list[:breeding_individuals]
 					while gen_number < total_generations:
 						gen_number += 1
-						cluster_group_list = Cluster_Next_Generation(cluster_group_list, hist_dict[win][chr], breeding_individuals, total_individuals, small_mut_freq, large_mut_freq, k, max_reads)
+						cluster_group_list = Cluster_Next_Generation(cluster_group_list, hist_dict[win][chromosome], breeding_individuals, total_individuals, small_mut_freq, large_mut_freq, k, max_reads)
 						past_gen_top_breeders[gen_number] = cluster_group_list[:breeding_individuals]
 						if gen_number > 3:
 							del past_gen_top_breeders[gen_number-3] # Save memory and time
@@ -505,14 +475,15 @@ def K_Means_Clustering(hist_dict):
 						# If so, save the single highest scoring cluster for this k value, then check to see if previous k values
 						# scored better. If so, set k-1 as the optimum clustering value. If not, continue increasing k.
 						
-						# 1) For the beginning few generations, check to see if the top breeding individuals have cluster groups that are
-						#	 identical to the previous two generations
+						# 1) For the beginning few generations, check to see if the top breeding individuals are all the same and
+						#	 are identical to the previous two generations
 						if gen_number < total_generations / 3 and gen_number > 2:
 							if very_verbose == True:
-								for cluster_group, dist_sum, data_point_dict in cluster_group_list[:breeding_individuals]:
+								for cluster_group, dist_sum, data_point_dict in past_gen_top_breeders[gen_number]:
 									print(str(cluster_group),"\t",str(dist_sum),"\t",str(sorted(data_point_dict.items())))
 								print("\n")
-							if past_gen_top_breeders[gen_number] == past_gen_top_breeders[gen_number-1] and past_gen_top_breeders[gen_number] == past_gen_top_breeders[gen_number-2] and gen_number >= minimum_generations:
+							if gen_number >= minimum_generations and past_gen_top_breeders[gen_number] == past_gen_top_breeders[gen_number-1] and past_gen_top_breeders[gen_number] == past_gen_top_breeders[gen_number-2]:
+								#and all(x == past_gen_top_breeders[gen_number][0] for x in past_gen_top_breeders[gen_number])
 								best_cluster_group = cluster_group_list[0]
 								best_cluster_group_for_each_k[k] = best_cluster_group
 								break_for_next_k = True
@@ -556,9 +527,9 @@ def K_Means_Clustering(hist_dict):
 				if k > 1 and log(best_cluster_group_for_each_k[k-1][1] * (k-1)) < log(best_cluster_group_for_each_k[k][1] * k):
 					# Determine whether or not k-1 dist_sum (normalized for the number of clusters used) was the optimal value for k.
 					# If so, halt genetic algorithm and return the k-1 cluster groups to be used for the creation of HMM probabilities.
-					k_cluster_count_dict[win][chr] = k-1
-					k_cluster_group_dict[win][chr] = best_cluster_group_for_each_k[k-1]
-					print("k=", str(k-1), " is optimal:\n", str(best_cluster_group_for_each_k[k-1]), "\n", sep='')
+					k_cluster_count_dict[win][chromosome] = k-1
+					k_cluster_group_dict[win][chromosome] = best_cluster_group_for_each_k[k-1]
+					print("k=", str(k-1), " is optimal:\n", str(best_cluster_group_for_each_k[k-1][0]), "\t", str(best_cluster_group_for_each_k[k-1][1]), "\t", sorted(best_cluster_group_for_each_k[k-1][2].items()), "\n", sep='')
 					break
 			if k == 50:
 				print("Failed to converge with 50 clusters or less. Program will now end.")
@@ -566,55 +537,55 @@ def K_Means_Clustering(hist_dict):
 	
 	return(k_cluster_count_dict, k_cluster_group_dict)
 
-def Prepare_HMM(sam, tp_positions, chr_len, chr, win_list, outdir, Rpath):
+def Prepare_HMM(sam, tp_positions, chromosome_len, chromosome, win_list, outdir, Rpath):
 	# Prepare_HMM creates (1) per-window read count histograms and (2) observation files, as well as
 	# (3) details for the HMM parameter file such as read count thresholds and copy number state names.
 	#
 	# At the end of this function, Dist_To_Params is called to output this data to files, and finally
 	# HMM_Dup_Search is called to run the HMM on these files and output the duplication search results.
 	
-	# Create list of chromosomes to run HMM on
-	chr_list = []
-	if chr == "All":
-		chr_list = [chr_entry for chr_entry in chr_len]
+	# Create list of chromosomeomosomes to run HMM on
+	chromosome_list = []
+	if chromosome == "All":
+		chromosome_list = [chromosome_entry for chromosome_entry in chromosome_len]
 	else:
-		chr_list = [chr_entry for chr_entry in chr.split(',')]
+		chromosome_list = [chromosome_entry for chromosome_entry in chromosome.split(',')]
 	
 	# Create the HMM observation files (path_dict, an OrderedDict containings # of reads per window in sequential order)
-	# and reads-per-window histograms (hist_dict, a dictionary whose values are chromosome-specific Counters representing reads-per-window)
-	hist_dict, path_dict = SAM_to_wincov(sam, win_list, chr_list, outdir, "False")
+	# and reads-per-window histograms (hist_dict, a dictionary whose values are chromosomeomosome-specific Counters representing reads-per-window)
+	hist_dict, path_dict = SAM_to_wincov(sam, win_list, chromosome_list, outdir, "False")
 	
 	# Read in histograms if hist_dict is empty for a particular window. This happens when histograms
-	# had already been generated for all chromosomes for that window, and is simply a time-saving feature
+	# had already been generated for all chromosomeomosomes for that window, and is simply a time-saving feature
 	# when performing re-runs on the same data set. Histogram and observation files are not re-created if
 	# they already exist, as this is the most time-consuming part of the entire pipeline.
 	for win in win_list:
 		if not hist_dict[win]:
 			# If this dictionary entry is empty for some window, grab those histograms from files
-			for chr in chr_list:
-				hist_i_fn = os.path.join(outdir, str(win) + "bp-window/" + str(chr) + "_hist.txt")
+			for chromosome in chromosome_list:
+				hist_i_fn = os.path.join(outdir, str(win) + "bp-window/" + str(chromosome) + "_hist.txt")
 				with open(hist_i_fn) as infile:
 					inlines = infile.readlines()
 					hist = Counter()
 					for line in inlines[1:]:
 						cov, freq = line.split("\t")
 						hist[int(cov)] = int(freq)
-				hist_dict[win][chr] = hist
+				hist_dict[win][chromosome] = hist
 	
 	# Pass histograms to k-means clustering function w/ genetic algorithm-based positioning of groups
 	k_cluster_count_dict, k_cluster_group_dict = K_Means_Clustering(hist_dict)
 
-	# Cycle over each window, chromosome, and threshold value combination provided and run HMM for each combination
+	# Cycle over each window, chromosomeomosome, and threshold value combination provided and run HMM for each combination
 	for win in win_list:
-		for chr in chr_list:
+		for chromosome in chromosome_list:
 			# Create an HMM parameter file (poisson probabilities of given # of reads in a window based on duplication status of that window)
-			threshold_count = Dist_To_Params(hist_dict[win][chr], k_cluster_count_dict[win][chr], k_cluster_group_dict[win][chr][0], k_cluster_group_dict[win][chr][2], win, chr, sam, outdir)
+			Dist_To_Params(hist_dict[win][chromosome], k_cluster_count_dict[win][chromosome], k_cluster_group_dict[win][chromosome][0], k_cluster_group_dict[win][chromosome][2], win, chromosome, sam, outdir)
 			
 			# Run HMM using generated parameter file and observation file
-			HMM_Dup_Search(outdir, tp_positions, chr, win, threshold_count, k_cluster_group_dict[win][chr][0], k_cluster_group_dict[win][chr][2])
+			HMM_Dup_Search(outdir, tp_positions, chromosome, win, k_cluster_group_dict[win][chromosome][0], k_cluster_group_dict[win][chromosome][2])
 
-def SAM_to_wincov(sam_file, win_list, chr_list, outdirpart, control_use):
-	# Check to see if, for a given window size, all chromosomes have already had their
+def SAM_to_wincov(sam_file, win_list, chromosome_list, outdirpart, control_use):
+	# Check to see if, for a given window size, all chromosomeomosomes have already had their
 	# per-window read count histogram generated. If so, do not re-create the existing
 	# data files necessary for the HMM to run.
 	win_list_needed = win_list
@@ -622,30 +593,30 @@ def SAM_to_wincov(sam_file, win_list, chr_list, outdirpart, control_use):
 		win_list_needed = []
 		for win in win_list:
 			not_needed = 0
-			for chr in chr_list:
+			for chromosome in chromosome_list:
 				# Check here to see if an observation file exists. If so, assume all files have
-				# already been generated for this chromosome & window combination
-				i_fn = os.path.join(outdirpart, str(win) + "bp-window/" + str(chr) + "_obs.txt")
+				# already been generated for this chromosomeomosome & window combination
+				i_fn = os.path.join(outdirpart, str(win) + "bp-window/" + str(chromosome) + "_obs.txt")
 				if os.path.exists(i_fn): not_needed += 1
-			# If we did not see an observation file for all chromosomes to be run on, re-create all
+			# If we did not see an observation file for all chromosomeomosomes to be run on, re-create all
 			# the HMM observation and histogram files
-			if not_needed != len(chr_list): win_list_needed.append(win)
+			if not_needed != len(chromosome_list): win_list_needed.append(win)
 	
 	hist_dict = {win: {} for win in win_list}
 	path_dict = {win: {} for win in win_list}
-	chr_string = ','.join(chr_list)
-	# If list is not empty, create paths for each chromosome/window pair
+	chromosome_string = ','.join(chromosome_list)
+	# If list is not empty, create paths for each chromosomeomosome/window pair
 	# If list is empty, we don't need to re-create existing data files, and thus the following 'if' block is skipped
 	if win_list_needed:
 		# Get per-window read count histograms and paths for the given window sizes
-		hist_dict, path_dict = SAM.Coverage_Window(sam_file, win_list_needed, chr_string, control_use)
+		hist_dict, path_dict = SAM.Coverage_Window(sam_file, win_list_needed, chromosome_string, control_use)
 		if control_use == "True":
 			# Only need path_dict for a file being used only to find the exp:control ratio of % total reads
 			# Thus, don't need to output paths or histograms, so skip past the following 'elif' block
 			pass
 		elif control_use == "False":
 			# Check to see if folders have already been made for the provided windows. If not, make them.
-			for chr in chr_list:
+			for chromosome in chromosome_list:
 				for win in win_list:
 					outdir = os.path.join(outdirpart,str(win) + "bp-window/")
 					print(outdirpart)
@@ -655,13 +626,13 @@ def SAM_to_wincov(sam_file, win_list, chr_list, outdirpart, control_use):
 			# Write out per-window read count histograms and paths
 			for win in win_list:
 				outdir = os.path.join(outdirpart,str(win) + "bp-window/")
-				for chr in chr_list:
-					outfilename1 = os.path.join(outdir, str(chr) + "_obs.txt")
-					outfilename2 = os.path.join(outdir, str(chr) + "_hist.txt")
+				for chromosome in chromosome_list:
+					outfilename1 = os.path.join(outdir, str(chromosome) + "_obs.txt")
+					outfilename2 = os.path.join(outdir, str(chromosome) + "_hist.txt")
 					with open(outfilename1, 'w') as outfile:
-						outfile.write(path_dict[win][chr])
+						outfile.write(path_dict[win][chromosome])
 					
-					outline = "\n".join([str(cov) + "\t" + str(freq) for cov, freq in sorted(hist_dict[win][chr].items(), key = lambda cov: cov[0])])
+					outline = "\n".join([str(cov) + "\t" + str(freq) for cov, freq in sorted(hist_dict[win][chromosome].items(), key = lambda cov: cov[0])])
 					with open(outfilename2, 'w') as outfile:
 						outline2 = "Coverage_per_" + str(win) + "bp_window\tCounts\n"
 						outfile.write(outline2)
@@ -670,16 +641,16 @@ def SAM_to_wincov(sam_file, win_list, chr_list, outdirpart, control_use):
 	return(hist_dict, path_dict)
 
 # Grab command line options
-sam, gff, chr, win_list, outdir, Rpath = Command_line()
+sam, gff, chromosome, win_list, outdir, Rpath = Command_line()
 
-# Determine the names of chromosomes and their lengths
-chr_len = SAM.Chr_Lengths(sam)
+# Determine the names of chromosomeomosomes and their lengths
+chromosome_len = SAM.Chr_Lengths(sam)
 
 # If a GFF file is provided, determine the location of all transposons
 # This is useful for quickly identifying false positive duplication calls
-tp_positions = Grab_Transposons(gff, chr_len)
+tp_positions = Grab_Transposons(gff, chromosome_len)
 
 # Generate the necessary data to perform an HMM-based duplication search,
 # then run the HMM on these parameters and observations.
 # Detailed commentary is provided within sub-routines
-Prepare_HMM(sam, tp_positions, chr_len, chr, win_list, outdir, Rpath)
+Prepare_HMM(sam, tp_positions, chromosome_len, chromosome, win_list, outdir, Rpath)

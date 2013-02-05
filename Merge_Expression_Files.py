@@ -5,8 +5,8 @@ from collections import Counter
 
 def Command_line():
     parser = argparse.ArgumentParser(description="Merge_Expression_Files.py combines the reads mapped per gene for all data files in the provided folder into a single table.")
-    parser.add_argument('-i', default="Data/RNA-Seq/AsLeaf_vs_ColRoot", type=str, help='Input folder for mRNA expression data files', metavar='Input')
-    parser.add_argument('-o', default="Data/RNA-Seq/AsLeaf_vs_ColRoot/mRNA_Expression.tsv", type=str, help='Output file for combined mRNA expression data files.', metavar='Output')
+    parser.add_argument('-i', default="Data/RNA-Seq/AsLeaf_vs_ColLeaf", type=str, help='Input folder for mRNA expression data files', metavar='Input')
+    parser.add_argument('-o', default="Data/RNA-Seq/AsLeaf_vs_ColLeaf/mRNA_Expression.tsv", type=str, help='Output file for combined mRNA expression data files.', metavar='Output')
     
     args = parser.parse_args()
     indir = args.i
