@@ -227,7 +227,6 @@ def Dist_To_Params_Outline(k_loc, prob_dict, trans_prob_dict):
 	outline += "\n\nEmission Probabilities:\n"
 	for i in range(65, 65+len(k_loc)):
 		cluster = k_loc[i-65]
-		print(states)
 		prob_list = prob_dict[cluster]
 		outline += str(states[i-65])
 		outline2 = ''.join(["\t" + str(i) + "\t" + str(prob_list[i]) + "\n" for i in range(0,len(prob_dict[cluster]))])
@@ -269,6 +268,7 @@ def HMM_Dup_Search(folder, tp_positions, chromosome, win, k_cluster_group_dict, 
 	param_file = os.path.join(outdir, str(chromosome) + "_params.txt")
 	obs_file = os.path.join(outdir, str(chromosome) + "_obs.txt")
 	path_file = os.path.join(outdir, str(chromosome) + "_path.txt")
+	cluster_file = os.path.join(outdir, str(chromosome) + "_clusters.txt")
 	
 	# Run Viterbi algorithm written in C++
 	if sys.platform in ["linux","linux2"] or sys.platform in ["darwin", "os2", "os2emx"]:
@@ -287,6 +287,7 @@ def HMM_Dup_Search(folder, tp_positions, chromosome, win, k_cluster_group_dict, 
 		sys.exit(0)
 	path = HMMRun.communicate()[0].decode("utf-8") # Grab path from Viterbi.exe output
 	path = path[::-1]
+	# Write path file
 	with open(path_file, 'w') as outfile:
 		outline = "\n".join(x for x in path)
 		outfile.write(outline)
@@ -318,14 +319,23 @@ def HMM_Dup_Search(folder, tp_positions, chromosome, win, k_cluster_group_dict, 
 		for i in range(0,len(obs_list)):
 			if i not in tp_windows: tp_windows[i] = []
 	
+	# Write cluster file
+	states = [chr(x) for x in range(65,65+len(k_cluster_group_dict))]
+	with open(cluster_file, 'w') as outfile:
+		outline = "HMM_State\tPosition\n"
+		outfile.write(outline)
+		for i in range(0, len(states)):
+			outline = str(states[i]) + "\t" + str(k_cluster_group_dict[i]) + "\n"
+			outfile.write(outline)
+		
 	# Write out HMM path along with average fold coverage and transposon count for each window
-	# If using a control, include exp:control ratio in output as well
 	all_outlines = []
 	# ASCII 65 = 'A'
-	states = [chr(x) for x in range(65,len(k_cluster_group_dict))]
+	states = [chr(x) for x in range(65,65+len(k_cluster_group_dict))]
 	single_copy_lambda = sorted(k_data_count_dict.items(), key = lambda entry: entry[1], reverse=True)[0][0]
 	for state in states:
-		pattern = str(states[state]) + r"{1,}"
+		#pattern = str(states[state]) + r"{1,}"
+		pattern = str(state) + "+"
 		recomp = re.compile(pattern)
 		
 		for m in recomp.finditer(path):
@@ -619,7 +629,6 @@ def SAM_to_wincov(sam_file, win_list, chromosome_list, outdirpart, control_use):
 			for chromosome in chromosome_list:
 				for win in win_list:
 					outdir = os.path.join(outdirpart,str(win) + "bp-window/")
-					print(outdirpart)
 					print(outdir)
 					if not os.path.exists(outdir): os.makedirs(outdir)
 			
