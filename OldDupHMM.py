@@ -2,6 +2,7 @@
 # Written by Matthew Porter @ UC Davis, Korf and Comai Labs
 import argparse, re, random, os, subprocess, sys
 from collections import Counter, OrderedDict
+from copy import deepcopy
 from math import exp, factorial, log, lgamma, fabs
 import SAM
 verbose = False
@@ -104,28 +105,38 @@ def Command_line():
 	parser = argparse.ArgumentParser(description="DupHMM.py runs a duplication-finding HMM on a SAM file. The SAM file is first broken up into user-specified window sizes, \
 									 reads mapping per-window counted, and a Poisson regression is performed on the resulting histogram of count data. This Poisson lambda \
 									 value is used to generate a HMM parameter file, which the duplication searching HMM then uses.")
-	parser.add_argument('-sam', default="Data/Sue/sue1/single_bp_preprocess/set5/libSUE1_set5_aln_Aa_Filtered.sam.gz", type=str, help='SAM filename for DupHMM to run on.', metavar='SAMFilename')
-	parser.add_argument('-o', default="Output/DupHMM_sue1_set5_AaFiltered_Kmeans_clustering", type=str, help='Output directory for DupHMM', metavar='OutputDir')
+	parser.add_argument('-m', default=1, type=int, choices=[1,2], help="Mode in which DupHMM will run. DupHMM can attempt to find CNVs via two means: (1) Fitting a Poisson distribution to a chromosome & assuming that Poisson fit represents a single copy region from which other CNV states' Poisson fits are determined, and (2) Using a k-means clustering algorithm to identify all major CNVs. Method (1) is the default used, and should be used for normal chromosomes, while Method (2) is more appropriate for abnormal chromosomes, e.g. cancer data sets, shattered chromosomes", metavar="ProgramMode")
+	parser.add_argument('-sam', default="Data/Sue/sue1/single_bp_preprocess/set5/libSUE1_set5_aln_Aa_Filtered.sam.gz", type=str, help='SAM filename containing reads for the HMM to run on.', metavar='SAMFilename')
+	parser.add_argument('-o', default="Output/DupHMM_sue1_set5_AaFiltered", type=str, help='Output directory for HMM results', metavar='OutputDir')
 	parser.add_argument('-gff', default="../Thalyrata.gff", type=str, help='GFF file for the reference genome. Used to annotate regions in the results which contain transposons. This makes spotting false positives easier.', metavar='GFFFile')
-	parser.add_argument('-chr', default="AtChr5", type=str, help='Chromosome to run HMM on (Default=Run HMM on all chromosomeomosomes). To look at >1 chromosomeomosome but not all chromosomeomosomes, provide them in a comma-delimited format: e.g. "Chr1,Chr2"', metavar='Chromosome')
-	parser.add_argument('-w', default="500", type=str, help='Window size the HMM will use, in bps (Default=500). To look at multiple windows, provide them in a comma-delimited format: e.g. "500,2000,2000,2500".', metavar='Window')
-	parser.add_argument('-R', default="", type=str, help="Directory where R is located. This only needs to be entered once, as the path is then saved in 'Rpath.txt'. NOTE: Your R installation must have the 'MASS' package installed.", metavar='RPath')
+	parser.add_argument('-chr', default="All", type=str, help='Chromosome to run HMM on (Default=Run HMM on all chromosomes). To look at >1 chromosome but not all chromosomes, provide them in a comma-delimited format: e.g. "Chr1,Chr2"', metavar='Chromosome')
+	parser.add_argument('-w', default="500", type=str, help='Window size the HMM will use, in bps (Default=2500). To look at multiple windows, provide them in a comma-delimited format: e.g. "1000,2000,2500,3000".', metavar='Window')
+	parser.add_argument('-scn', default="1,2,5", type=str, help='Mode 1 Feature: Copy numbers for HMM states, separated by commas and listed in increasing numerical order (Default="1,2,5").', metavar='StateCopyNum')
+	parser.add_argument('-sn', default="S,D,H", type=str, help='Mode 1 Feature: Single character names corresponding to copy number HMM states, separated by commas and listed in increasing numerical order (Default="S,D,H", short for Single,Double,High).', metavar='StateNames')
+	parser.add_argument('-l', default=0, type=float, help='Mode 1 Feature: Manually provide a lambda value for the poisson distribution representing a single copy region. Entering this skips Poisson regression over the per-window read count histogram.)', metavar='LambdaMean')
+	parser.add_argument('-trans', default=-50, type=float, help='Mode 1 Feature: Log probability for moving from same state->different state (Default=-50, Suggested:-50 or -100). Same State->Same State probability is unchangeable from 1.', metavar='TransProb')
+	parser.add_argument('-thr', default="10X,20X", type=str, help='Mode 1 Feature: Threshold value for read counts. If a window contains more reads than the threshold, the previous window\'s state and probability are copied to the read spike window, effectively ignoring read spikes. Multiple comma-separated values can be provided here for multiple re-runs, e.g. "100,200". Threshold can also be set relative to the lambda value for a 1X region, e.g. "10X,20X". Default="10X,20X"', metavar='ReadThreshold')
+	parser.add_argument('-R', default="", type=str, help="Directory where R is located. This only needs to be entered once, as the path is then saved in 'Rpath.txt'. Your R installation needs to have the 'MASS' package installed.", metavar='RPath')
 	parser.add_argument('-v', action='store_true', help='Turns on verbose output for k-means clustering')
 	
 	args = parser.parse_args()
+	mode = args.m
 	sam = args.sam
 	gff = args.gff
 	chromosome = args.chr
 	win_list = args.w
 	win_list = [int(entry) for entry in win_list.split(',')]
-	global verbose
-	verbose = args.v
+	state_cns = args.scn
+	state_names = args.sn
+	pois_lambda = args.l
+	trans_prob = args.trans
+	t_count = (args.thr).split(",")
 	outdir = args.o
 	if outdir[-1:] == "\"": outdir = outdir[:-1]
 	Rpath = args.R
 	if Rpath[-1:] == "\"": Rpath = Rpath[:-1]
 	#Rpath = r"/share/apps/R-2.15.0/bin/Rscript"
-	#Rpath = r"C:/Program Files/R/R-2.15.2/bin/x64/Rscript.exe"
+	#Rpath = r"C:/Program Files/R/R-2.15.0/bin/x64/Rscript.exe"
 	
 	# Determine the path for R installation
 	if Rpath == "":
@@ -139,11 +150,65 @@ def Command_line():
 		with open("Rpath.txt", 'w') as outfile:
 			outfile.write(Rpath)
 	
-	return(sam, gff, chromosome, win_list, outdir, Rpath)
+	return(mode, sam, gff, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath)
 
-def Dist_To_Params(hist, k_cluster_count, k_loc, k_data_count, win, chromosome, sam, outdir):
+def Dist_To_Params_ModeOne(states, pois_lambda, trans_prob, t_count, hist, win, chromosome, sam, outdir):
 	# Distribution_to_parameters_file
 	# Converts per-window read count histogram with a Poisson fit to it into
+	# parameters that an HMM can utilize
+	
+	# Calculating emission probabilities for X-fold copy states based on Poisson probabilities
+	prob_dict = {}
+	max_value = max(hist)
+	if t_count != 0: # If there is a read count threshold t, discard read counts >= t
+		max_value = int(t_count)
+	
+	j = 0
+	for copy_num in states.keys():
+		prob_list = []
+		for k in range(0,max_value+1):
+			mu = pois_lambda*copy_num
+			#nonlogprob = exp(-mu) * mu**k / factorial(k)	# Fails when k is too large. Must be handled in log-space
+			prob = exp(k*log(mu)-lgamma(k+1) - mu)			# Above equation handled in log-space
+			if prob == 0 and j == len(states.keys())-1:
+				# Find the maximum non-zero probability for highest copy-number state
+				left_tailed = True
+				for entry in prob_list: # Check to make sure this isn't a left-tailed 0
+					if entry != 0:
+						left_tailed = False
+						break
+				if left_tailed == False:
+					# Not a left-tailed 0, so stop calculating Poisson values beyond this maximum non-zero probability
+					# Want to next remove count values for lower copy number states where it is guaranteed that P=0
+					max_value = t_count = k-1
+					break
+			prob_list.append(prob)
+		prob_dict[copy_num] = prob_list
+		j += 1
+	
+	# Trim histograms such that the copy number states do not have an excessive number of right-tailed 0's
+	# HMM treats missing reads-per-window counts as 0, so right-sided trimming histograms to the maximum read-per-window read count
+	# with a non-zero probability for the highest copy number state helps save parameter file disk space, time, and memory
+	i = 0
+	for copy_num in states.keys():
+		prob_dict[copy_num] = {i: prob_dict[copy_num][i] for i in range(0,t_count+1)}
+		# Do not need to re-trim highest copy-number state
+		i += 1
+		if i == len(states.keys()) - 1: break
+		
+	# Create parameter file
+	# Call Dist_To_Params_Outline_ModeOne to create the line of text to be written out
+	outline = Dist_To_Params_Outline_ModeOne(states, trans_prob, prob_dict)
+	t_outdir = os.path.join(outdir,str(win) + "bp-window/" + str(t_count) + "_read_threshold/")
+	if not os.path.exists(t_outdir): os.makedirs(t_outdir)
+	outfilename = os.path.join(t_outdir, str(chromosome) + "_params.txt")
+	with open(outfilename, 'w') as outfile:
+		outfile.write(outline)
+	return(max_value)
+
+def Dist_To_Params_ModeTwo(hist, k_cluster_count, k_loc, k_data_count, win, chromosome, sam, outdir):
+	# Distribution_to_parameters_file
+	# Converts per-window read count histogram with k-clusters into
 	# parameters that an HMM can utilize
 	
 	# Calculating emission probabilities for CNV states based on Poisson probabilities
@@ -190,15 +255,44 @@ def Dist_To_Params(hist, k_cluster_count, k_loc, k_data_count, win, chromosome, 
 		trans_prob_dict[cluster] = {x: 10**(-75 - (-75 * k_data_count[x] / total_data_points)) for x in k_loc}
 	
 	# Create parameter file
-	# Call Dist_To_Params_Outline to create the line of text to be written out
-	outline = Dist_To_Params_Outline(k_loc, prob_dict, trans_prob_dict)
+	# Call Dist_To_Params_Outline_ModeTwo to create the line of text to be written out
+	outline = Dist_To_Params_Outline_ModeTwo(k_loc, prob_dict, trans_prob_dict)
 	t_outdir = os.path.join(outdir,str(win) + "bp-window/")
 	if not os.path.exists(t_outdir): os.makedirs(t_outdir)
 	outfilename = os.path.join(t_outdir, str(chromosome) + "_params.txt")
 	with open(outfilename, 'w') as outfile:
 		outfile.write(outline)
 
-def Dist_To_Params_Outline(k_loc, prob_dict, trans_prob_dict):
+def Dist_To_Params_Outline_ModeOne(states, trans_prob, prob_dict):
+	# Distribution_to_parameters_file_outline
+	# Formats HMM parameters for output into a format that the HMM can read in
+	
+	# States and start probabilities
+	outline = "States:\n"
+	outline += '\n'.join(states.values())
+	outline += "\n\nStart Probabilities:\n"
+	for i in states.values():
+		outline += str(i) + "\t" + str(1/len(states)) + "\n"
+	
+	# Transition probabilities
+	outline += "\nTransition Probabilities:"
+	for i in range(0,len(states)):
+		temp_trans = 1 if i == 0 else 10**trans_prob
+		outline += "\n" + str(states[list(states.keys())[i]]) + "\t" + str(states[list(states.keys())[0]]) + "\t" + str(temp_trans)
+		for j in range(1,len(states)):
+			temp_trans = 1 if i == j else 10**trans_prob
+			outline += "\n\t" + str(states[list(states.keys())[j]]) + "\t" + str(temp_trans)
+	
+	# Part of output containing emission probabilities
+	outline += "\n\nEmission Probabilities:\n"
+	for copy_num in states.keys():
+		prob_list = prob_dict[copy_num]
+		outline += str(states[copy_num])
+		outline2 = ''.join(["\t" + str(i) + "\t" + str(prob_list[i]) + "\n" for i in range(0,len(prob_dict[copy_num]))])
+		outline += str(outline2) + "\n"
+	return outline
+
+def Dist_To_Params_Outline_ModeTwo(k_loc, prob_dict, trans_prob_dict):
 	# Distribution_to_parameters_file_outline
 	# Formats HMM parameters for output into a format that the HMM can read in
 	
@@ -228,7 +322,7 @@ def Dist_To_Params_Outline(k_loc, prob_dict, trans_prob_dict):
 		outline += str(outline2) + "\n"
 	return outline
 
-def Grab_Transposons(gff, chromosome_len):
+def Grab_Transposons(gff, chr_len):
 	pattern = r"(transposable_element_gene|transposable_element)"
 	recomp = re.compile(pattern)
 	pattern2 = r"^ID=(\S+?);"
@@ -237,7 +331,7 @@ def Grab_Transposons(gff, chromosome_len):
 	if gff != "":
 		# If a GFF file was provided, fill tp_positions dictionary
 		# with transposon positions
-		for chromosome in chromosome_len:
+		for chromosome in chr_len:
 			tp_positions[chromosome] = []
 		with open(gff) as infile:
 			for line in infile:
@@ -255,15 +349,14 @@ def Grab_Transposons(gff, chromosome_len):
 					tp_positions[chromosome].append((name, spos,epos, type))
 	return tp_positions
 
-def HMM_Dup_Search(folder, tp_positions, chromosome, win, single_copy_lambda, k_cluster_group_dict):
+def HMM_Dup_Search(mode, folder, tp_positions, chromosome, win, pois_lambda, states, t_count):
 	# HMM_Dup_search runs the HMM using a Viterbi algorithm written in C++ .
 	# It waits for the HMM run to complete, grabs the HMM results from Viterbi's output, then parses and outputs results.
 	
 	outdir = os.path.join(folder, str(win) + "bp-window/")
-	param_file = os.path.join(outdir, str(chromosome) + "_params.txt")
+	param_file = os.path.join(outdir, str(t_count) + "_read_threshold/" + str(chromosome) + "_params.txt")
 	obs_file = os.path.join(outdir, str(chromosome) + "_obs.txt")
 	path_file = os.path.join(outdir, str(chromosome) + "_path.txt")
-	cluster_file = os.path.join(outdir, str(chromosome) + "_clusters.txt")
 	
 	# Run Viterbi algorithm written in C++
 	if sys.platform in ["linux","linux2"] or sys.platform in ["darwin", "os2", "os2emx"]:
@@ -315,27 +408,32 @@ def HMM_Dup_Search(folder, tp_positions, chromosome, win, single_copy_lambda, k_
 		for i in range(0,len(obs_list)):
 			if i not in tp_windows: tp_windows[i] = []
 	
-	# Write cluster file
-	states = [chr(x) for x in range(65,65+len(k_cluster_group_dict))]
-	with open(cluster_file, 'w') as outfile:
-		outline = "HMM_State\tPosition\n"
-		outfile.write(outline)
-		for i in range(0, len(states)):
-			outline = str(states[i]) + "\t" + str(k_cluster_group_dict[i]) + "\n"
+	if mode == 2: # K-means clustering mode
+		# Write cluster file
+		cluster_file = os.path.join(outdir, str(chromosome) + "_clusters.txt")
+		k_cluster_group_dict = deepcopy(states)
+		# ASCII 65 = 'A'
+		states = [chr(x) for x in range(65,65+len(k_cluster_group_dict))]
+		with open(cluster_file, 'w') as outfile:
+			outline = "HMM_State\tPosition\n"
 			outfile.write(outline)
+			for i in range(0, len(states)):
+				outline = str(states[i]) + "\t" + str(k_cluster_group_dict[i]) + "\n"
+				outfile.write(outline)
 		
 	# Write out HMM path along with average fold coverage and transposon count for each window
 	all_outlines = []
-	# ASCII 65 = 'A'
-	states = [chr(x) for x in range(65,65+len(k_cluster_group_dict))]
 	for state in states:
-		pattern = str(state) + "+"
+		if mode == 1:   # Poisson fit mode
+			pattern = str(states[state]) + r"{1,}"
+		elif mode == 2: # K-means clustering mode
+			pattern = str(state) + "+"
 		recomp = re.compile(pattern)
 		
 		for m in recomp.finditer(path):
 			s_pos = m.start()*win
 			e_pos = m.end()*win
-			fold_cov = round(sum([obs_list[i] for i in range(m.start(),m.end()+1)]) / (m.end() - m.start()) / single_copy_lambda, 2)
+			fold_cov = round(sum([obs_list[i] for i in range(m.start(),m.end()+1) if obs_list[i] < t_count]) / (m.end() - m.start()) / pois_lambda, 2)
 			tp_union_list = set()
 			# If a GFF file was provided, include per-window transposon counts in results
 			if tp_windows != {}:
@@ -350,7 +448,10 @@ def HMM_Dup_Search(folder, tp_positions, chromosome, win, single_copy_lambda, k_
 				# If a GFF file was NOT provided, DO NOT include per-window transposon counts in results
 				all_outlines.append( (chromosome,s_pos,e_pos,e_pos - s_pos, str(state), fold_cov) )
 	
-	outfilename = os.path.join(outdir, str(chromosome) + "_Results.txt")
+	if mode == 1:   # Poisson fit mode
+		outfilename = os.path.join(outdir, str(t_count) + "_read_threshold/" + str(chromosome) + "_Results.txt")
+	elif mode == 2: # K-means clustering mode
+		outfilename = os.path.join(outdir, str(chromosome) + "_Results.txt")
 	all_outlines = sorted(all_outlines, key = lambda entry: (entry[0], entry[1]))
 	with open(outfilename, 'w') as outfile:
 		if tp_windows != {}:
@@ -410,11 +511,11 @@ def K_Means_Clustering(hist_dict):
 	for win in k_cluster_group_dict:
 		k_cluster_group_dict[win] = {chromosome: [] for chromosome in hist_dict[win]}
 	
-	# Find optimum data clustering for each window & chromosomeomosome combination
+	# Find optimum data clustering for each window & chromosome combination
 	for win in hist_dict:
 		for chromosome in hist_dict[win]:
 			# Remove histogram elements in which a coverage value appears with a frequency of 0, then
-			# calculate the minimum and maximum reads-per-window values that can be found on this chromosomeomosome
+			# calculate the minimum and maximum reads-per-window values that can be found on this chromosome
 			hist_dict[win][chromosome] = Counter({cov: freq for cov, freq in hist_dict[win][chromosome].items() if freq != 0})
 			min_reads = min(hist_dict[win][chromosome].keys())
 			max_reads = max(hist_dict[win][chromosome].keys())
@@ -536,26 +637,26 @@ def K_Means_Clustering(hist_dict):
 	
 	return(k_cluster_count_dict, k_cluster_group_dict)
 
-def Prepare_HMM(sam, tp_positions, chromosome_len, chromosome, win_list, outdir, Rpath):
+def Prepare_HMM(mode, sam, control, tp_positions, chr_len, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath):
 	# Prepare_HMM creates (1) per-window read count histograms and (2) observation files, as well as
 	# (3) details for the HMM parameter file such as read count thresholds and copy number state names.
 	#
 	# At the end of this function, Dist_To_Params is called to output this data to files, and finally
 	# HMM_Dup_Search is called to run the HMM on these files and output the duplication search results.
 	
-	# Create list of chromosomeomosomes to run HMM on
+	# Create list of chromosomes to run HMM on
 	chromosome_list = []
 	if chromosome == "All":
-		chromosome_list = [chromosome_entry for chromosome_entry in chromosome_len]
+		chromosome_list = [chromosome_entry for chromosome_entry in chr_len]
 	else:
 		chromosome_list = [chromosome_entry for chromosome_entry in chromosome.split(',')]
 	
 	# Create the HMM observation files (path_dict, an OrderedDict containings # of reads per window in sequential order)
-	# and reads-per-window histograms (hist_dict, a dictionary whose values are chromosomeomosome-specific Counters representing reads-per-window)
+	# and reads-per-window histograms (hist_dict, a dictionary whose values are chromosome-specific Counters representing reads-per-window)
 	hist_dict, path_dict = SAM_to_wincov(sam, win_list, chromosome_list, outdir, "False")
 	
 	# Read in histograms if hist_dict is empty for a particular window. This happens when histograms
-	# had already been generated for all chromosomeomosomes for that window, and is simply a time-saving feature
+	# had already been generated for all chromosomes for that window, and is simply a time-saving feature
 	# when performing re-runs on the same data set. Histogram and observation files are not re-created if
 	# they already exist, as this is the most time-consuming part of the entire pipeline.
 	for win in win_list:
@@ -570,26 +671,104 @@ def Prepare_HMM(sam, tp_positions, chromosome_len, chromosome, win_list, outdir,
 						cov, freq = line.split("\t")
 						hist[int(cov)] = int(freq)
 				hist_dict[win][chromosome] = hist
-	
-	# Pass histograms to k-means clustering function w/ genetic algorithm-based positioning of groups
-	k_cluster_count_dict, k_cluster_group_dict = K_Means_Clustering(hist_dict)
 
-	# Cycle over each window, chromosomeomosome, and threshold value combination provided and run HMM for each combination
-	for win in win_list:
-		for chromosome in chromosome_list:
-			# Create an HMM parameter file (poisson probabilities of given # of reads in a window based on duplication status of that window)
-			Dist_To_Params(hist_dict[win][chromosome], k_cluster_count_dict[win][chromosome], k_cluster_group_dict[win][chromosome][0], k_cluster_group_dict[win][chromosome][2], win, chromosome, sam, outdir)
-			
-			# Run HMM using generated parameter file and observation file
-			k_cluster_group_dict = k_cluster_group_dict[win][chromosome][0]
-			k_data_count_dict = k_cluster_group_dict[win][chromosome][2]
-			# Assign cluster group with the most data points as the '1X' region, around which all other cluster groups
-			# will have their relative fold coverage calculated
-			single_copy_lambda = sorted(k_data_count_dict.items(), key = lambda entry: entry[1], reverse=True)[0][0]
-			HMM_Dup_Search(outdir, tp_positions, chromosome, win, single_copy_lambda, k_cluster_group_dict)
+	if mode == 1: # Poisson fit mode	
+		# Determine the poisson lambda values for a distribution of reads given the aforementioned reads-per-window histogram tables.
+		# If the user supplied a 1X copy region lambda value, use that instead.
+		singlecopy_lambda = {win: {} for win in win_list}
+		for win in win_list:
+			for chromosome in chromosome_list:
+				# Dictionary holding 1X copy lambdas, used for threshold calculations later
+				singlecopy_lambda[win][chromosome] = pois_lambda
+		
+		# If user didn't supply 1X lambda, calculate it from chromosomal per-window read histograms
+		if pois_lambda == 0:
+			for win in win_list:
+				for chromosome in chromosome_list:
+					# First create text file for R script containing the filename for the read histogram
+					o_fn = "HMMInputfiles.txt"
+					i_fn_1 = os.path.join(outdir,str(win) + "bp-window/" + str(chromosome) + "_hist_distfits.txt")
+					if not os.path.exists(i_fn_1):
+						i_fn_2 = os.path.join(outdir, str(win) + "bp-window/" + str(chromosome) + "_hist.txt")
+						line = str(i_fn_2) + "\n"
+						with open(o_fn, 'w') as outfile:
+							outfile.write(line)
+						# Now call R script "dist_fit.R" to perform Poisson regression
+						if sys.platform in ["linux","linux2"]:
+							params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save"])
+							simulation = subprocess.Popen(params, shell=True)
+						elif sys.platform in ["win32","win64"]:
+							params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save --slave"])
+							simulation = subprocess.Popen(params)
+						elif sys.platform in ["darwin", "os2", "os2emx"]:
+							# Copy-pasted from linux code block. Possibly different?
+							params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save"])
+							simulation = subprocess.Popen(params, shell=True)
+						else:
+							# User is operating on an unknown OS, end program
+							print("Working with an unknown OS, ", sys.platform, ", unable to perform Poisson regression on histogram using R. Please report this problem.", sep='')
+							sys.exit(0)
+						simulation.wait()
+						# Try to remove temporary file "HMMInputfiles.txt"
+						try:
+							os.remove(o_fn)
+						except:
+							print("Due to an issue with permissions, the temporary file 'HMMInputfiles.txt' could not be removed.")
+					# Read in "dist_fit.R" results file and grab Poisson regression lambda value
+					with open(i_fn_1) as infile:
+						inlines = infile.readlines()
+						inlines = [line.split() for line in inlines]
+						singlecopy_lambda[win][chromosome] = float(inlines[1][1])
+	
+		# Assign read count thresholds for window/chromosome combinations
+		temp_t_count = {win: {} for win in win_list}
+		for win in win_list:
+			for chromosome in chromosome_list:
+				temp_t_count[win][chromosome] = t_count[:]
+				if t_count == [0]:
+					# If no threshold was given, assign this to maximum coverage
+					temp_t_count[win][chromosome] = [max(hist_dict[win][chromosome])]
+				else:
+					# Calculate read count threshold based on X-fold value of single-copy region lambda value
+					for i in range(0,len(t_count)):
+						if t_count[i][-1:] == "X":
+							temp_t_count[win][chromosome][i] = int(float(t_count[i][:-1] * singlecopy_lambda[win][chromosome]))
+	
+		# Assign states and their corresponding character codes
+		state_cns_list = state_cns.split(',')
+		state_names_list = state_names.split(',')
+		states = OrderedDict({int(state_cns_list[i]): state_names_list[i] for i in range(0,len(state_cns_list))})
+		
+		# Cycle over each window, chromosome, and threshold value combination provided and run HMM for each combination
+		for win in win_list:
+			for chromosome in chromosome_list:
+				for threshold_count in temp_t_count[win][chromosome]:
+					# Create an HMM parameter file (poisson probabilities of given # of reads in a window based on duplication status of that window)
+					threshold_count = Dist_To_Params_ModeOne(states, singlecopy_lambda[win][chromosome], trans_prob, threshold_count, hist_dict[win][chromosome], win, chromosome, sam, outdir)
+					
+					# Run HMM using generated parameter file and observation file
+					HMM_Dup_Search(mode, outdir, tp_positions, chromosome, win, singlecopy_lambda[win][chromosome], states, threshold_count)
+	
+	elif mode == 2: # K-means clustering mode
+		# Pass histograms to k-means clustering function w/ genetic algorithm-based positioning of groups
+		k_cluster_count_dict, k_cluster_group_dict = K_Means_Clustering(hist_dict)
+		
+		# Cycle over each window, chromosome, and threshold value combination provided and run HMM for each combination
+		for win in win_list:
+			for chromosome in chromosome_list:
+				# Create an HMM parameter file (poisson probabilities of given # of reads in a window based on duplication status of that window)
+				Dist_To_Params_ModeTwo(hist_dict[win][chromosome], k_cluster_count_dict[win][chromosome], k_cluster_group_dict[win][chromosome][0], k_cluster_group_dict[win][chromosome][2], win, chromosome, sam, outdir)
+				
+				# Run HMM using generated parameter file and observation file
+				k_cluster_group_dict = k_cluster_group_dict[win][chromosome][0]
+				k_data_count_dict = k_cluster_group_dict[win][chromosome][2]
+				# Assign cluster group with the most data points as the '1X' region, around which all other cluster groups
+				# will have their relative fold coverage calculated
+				single_copy_lambda = sorted(k_data_count_dict.items(), key = lambda entry: entry[1], reverse=True)[0][0]
+				HMM_Dup_Search(mode, outdir, tp_positions, chromosome, win, single_copy_lambda, k_cluster_group_dict, 0)
 
 def SAM_to_wincov(sam_file, win_list, chromosome_list, outdirpart, control_use):
-	# Check to see if, for a given window size, all chromosomeomosomes have already had their
+	# Check to see if, for a given window size, all chromosomes have already had their
 	# per-window read count histogram generated. If so, do not re-create the existing
 	# data files necessary for the HMM to run.
 	win_list_needed = win_list
@@ -599,21 +778,21 @@ def SAM_to_wincov(sam_file, win_list, chromosome_list, outdirpart, control_use):
 			not_needed = 0
 			for chromosome in chromosome_list:
 				# Check here to see if an observation file exists. If so, assume all files have
-				# already been generated for this chromosomeomosome & window combination
+				# already been generated for this chromosome & window combination
 				i_fn = os.path.join(outdirpart, str(win) + "bp-window/" + str(chromosome) + "_obs.txt")
 				if os.path.exists(i_fn): not_needed += 1
-			# If we did not see an observation file for all chromosomeomosomes to be run on, re-create all
+			# If we did not see an observation file for all chromosomes to be run on, re-create all
 			# the HMM observation and histogram files
 			if not_needed != len(chromosome_list): win_list_needed.append(win)
 	
 	hist_dict = {win: {} for win in win_list}
 	path_dict = {win: {} for win in win_list}
-	chromosome_string = ','.join(chromosome_list)
-	# If list is not empty, create paths for each chromosomeomosome/window pair
+	chr_string = ','.join(chromosome_list)
+	# If list is not empty, create paths for each chromosome/window pair
 	# If list is empty, we don't need to re-create existing data files, and thus the following 'if' block is skipped
 	if win_list_needed:
 		# Get per-window read count histograms and paths for the given window sizes
-		hist_dict, path_dict = SAM.Coverage_Window(sam_file, win_list_needed, chromosome_string, control_use)
+		hist_dict, path_dict = SAM.Coverage_Window(sam_file, win_list_needed, chr_string, control_use)
 		if control_use == "True":
 			# Only need path_dict for a file being used only to find the exp:control ratio of % total reads
 			# Thus, don't need to output paths or histograms, so skip past the following 'elif' block
@@ -623,6 +802,7 @@ def SAM_to_wincov(sam_file, win_list, chromosome_list, outdirpart, control_use):
 			for chromosome in chromosome_list:
 				for win in win_list:
 					outdir = os.path.join(outdirpart,str(win) + "bp-window/")
+					print(outdirpart)
 					print(outdir)
 					if not os.path.exists(outdir): os.makedirs(outdir)
 			
@@ -644,16 +824,16 @@ def SAM_to_wincov(sam_file, win_list, chromosome_list, outdirpart, control_use):
 	return(hist_dict, path_dict)
 
 # Grab command line options
-sam, gff, chromosome, win_list, outdir, Rpath = Command_line()
+mode, sam, gff, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath = Command_line()
 
-# Determine the names of chromosomeomosomes and their lengths
-chromosome_len = SAM.Chr_Lengths(sam)
+# Determine the names of chromosomes and their lengths
+chr_len = SAM.Chr_Lengths(sam)
 
 # If a GFF file is provided, determine the location of all transposons
 # This is useful for quickly identifying false positive duplication calls
-tp_positions = Grab_Transposons(gff, chromosome_len)
+tp_positions = Grab_Transposons(gff, chr_len)
 
 # Generate the necessary data to perform an HMM-based duplication search,
 # then run the HMM on these parameters and observations.
 # Detailed commentary is provided within sub-routines
-Prepare_HMM(sam, tp_positions, chromosome_len, chromosome, win_list, outdir, Rpath)
+Prepare_HMM(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath)
