@@ -116,7 +116,6 @@ def command_line():
 	parser.add_argument('-l', default=0, type=float, help='Mode 1 Feature: Manually provide a lambda value for the poisson distribution representing a single copy region. Entering this skips Poisson regression over the per-window read count histogram.)', metavar='LambdaMean')
 	parser.add_argument('-trans', default=-50, type=float, help='Mode 1 Feature: Log probability for moving from same state->different state (Default=-50, Suggested:-50 or -100). Same State->Same State probability is unchangeable from 1.', metavar='TransProb')
 	parser.add_argument('-thr', default="10X,20X", type=str, help='Mode 1 Feature: Threshold value for read counts. If a window contains more reads than the threshold, the previous window\'s state and probability are copied to the read spike window, effectively ignoring read spikes. Multiple comma-separated values can be provided here for multiple re-runs, e.g. "100,200". Threshold can also be set relative to the lambda value for a 1X region, e.g. "10X,20X". Default="10X,20X"', metavar='ReadThreshold')
-	parser.add_argument('-R', default="", type=str, help="Directory where R is located. This only needs to be entered once if DupHMM does not correctly detect the R installation path. What you enter here will be saved in 'Rpath.txt' and re-used next time DupHMM is run.", metavar='RPath')
 	parser.add_argument('-v', action='store_true', help='Turns on verbose output for k-means clustering')
 	
 	args = parser.parse_args()
@@ -132,24 +131,8 @@ def command_line():
 	trans_prob = args.trans
 	t_count = (args.thr).split(",")
 	outdir = args.o
-	Rpath = args.R
-	#Rpath = r"C:/Program Files/R/R-2.15.2/bin/x64/Rscript.exe"
-	#Rpath = r"C:/Program Files (x86)/R/R-2.15.0/bin/i386/Rscript.exe"
 	
-	# Determine the path for R installation
-	Rpath = "Rscript"
-	#if Rpath == "":
-	#	try:
-	#		with open("Rpath.txt") as infile:
-	#			Rpath = infile.readline()
-	#	except:
-	#		print("A path to R was not provided, and 'Rpath.txt' does not exist.")
-	#		sys.exit(0)
-	#else:
-	#	with open("Rpath.txt", 'w') as outfile:
-	#		outfile.write(Rpath)
-	
-	return(mode, sam, gff, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath)
+	return(mode, sam, gff, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir)
 
 def dist_to_params_mode_one(states, pois_lambda, trans_prob, t_count, hist, win, chromosome, sam, outdir):
 	# Distribution_to_parameters_file
@@ -322,7 +305,7 @@ def dist_to_params_outline_mode_two(k_loc, prob_dict, trans_prob_dict):
 	return outline
 
 def grab_transposons(gff, chr_len):
-	pattern = r"(transposable_element_gene|transposable_element)"
+	pattern = r"(transposable_element_gene|transposable_element|transposon)"
 	recomp = re.compile(pattern)
 	pattern2 = r"^ID=(\S+?);"
 	recomp2 = re.compile(pattern2)
@@ -343,7 +326,7 @@ def grab_transposons(gff, chr_len):
 					spos = int(line[3])
 					epos = int(line[4])
 					type = 2 # Neither transposable_element nor transposable_element_gene
-					if match.group(1) == "transposable_element_gene": type = 1
+					if match.group(1) == "transposable_element_gene" or match.group(1) == "transposon": type = 1
 					elif match.group(1) == "transposable_element": type = 0
 					tp_positions[chromosome].append((name, spos,epos, type))
 	return tp_positions
@@ -625,11 +608,11 @@ def k_means_clustering(hist_dict):
 	
 	return(k_cluster_count_dict, k_cluster_group_dict)
 
-def prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath):
+def prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir):
 	# prepare_hmm creates (1) per-window read count histograms and (2) observation files, as well as
 	# (3) details for the HMM parameter file such as read count thresholds and copy number state names.
 	#
-	# At the end of this function, Dist_To_Params is called to output this data to files, and finally
+	# At the end of this function, dist_to_params is called to output this data to files, and finally
 	# hmm_dup_search is called to run the HMM on these files and output the duplication search results.
 	
 	# Create list of chromosomes to run HMM on
@@ -682,6 +665,7 @@ def prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cn
 						with open(o_fn, 'w') as outfile:
 							outfile.write(line)
 						# Now call R script "dist_fit.R" to perform Poisson regression
+						Rpath = "Rscript"
 						params = ' '.join([str(Rpath) + " dist_fit.R", "--no-save"])
 						simulation = subprocess.Popen(params, shell=True)
 						simulation.wait()
@@ -713,7 +697,10 @@ def prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cn
 		# Assign states and their corresponding character codes
 		state_cns_list = state_cns.split(',')
 		state_names_list = state_names.split(',')
-		states = OrderedDict({int(state_cns_list[i]): state_names_list[i] for i in range(0,len(state_cns_list))})
+		states = OrderedDict({float(state_cns_list[i]): state_names_list[i] for i in range(0,len(state_cns_list))})
+		# OrderedDict is slightly bugged, as it does not add items in correctly when fractional copy state numbers are used
+		# To correct for this, we sort states.items() and convert it again to an OrderedDict
+		states = OrderedDict(sorted(states.items()))
 		
 		# Cycle over each window, chromosome, and threshold value combination provided and run HMM for each combination
 		for win in win_list:
@@ -794,7 +781,7 @@ def sam_to_wincov(sam_file, win_list, chromosome_list, outdirpart):
 	return(hist_dict, path_dict)
 
 # Grab command line options
-mode, sam, gff, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath = command_line()
+mode, sam, gff, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir = command_line()
 
 # Determine the names of chromosomes and their lengths
 chr_len = SAM.chr_lengths(sam)
@@ -806,4 +793,4 @@ tp_positions = grab_transposons(gff, chr_len)
 # Generate the necessary data to perform an HMM-based duplication search,
 # then run the HMM on these parameters and observations.
 # Detailed commentary is provided within sub-routines
-prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir, Rpath)
+prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir)
