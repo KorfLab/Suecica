@@ -3,7 +3,7 @@
 import argparse, re, os
 from collections import Counter
 
-def Command_line():
+def command_line():
     parser = argparse.ArgumentParser(description="Merge_Expression_Files.py combines the reads mapped per gene for all data files in the provided folder into a single table.")
     parser.add_argument('-i', default="Data/RNA-Seq/AsLeaf_vs_ColLeaf", type=str, help='Input folder for mRNA expression data files', metavar='Input')
     parser.add_argument('-o', default="Data/RNA-Seq/AsLeaf_vs_ColLeaf/mRNA_Expression.tsv", type=str, help='Output file for combined mRNA expression data files.', metavar='Output')
@@ -14,7 +14,7 @@ def Command_line():
     
     return(indir, outfile)
 
-indir, outfile = Command_line()
+indir, outfile = command_line()
 pattern = r"(.*_gene_count.tsv$)"
 recomp = re.compile(pattern)
 

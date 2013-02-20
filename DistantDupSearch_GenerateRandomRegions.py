@@ -2,7 +2,7 @@
 import argparse, random, re
 import SAM
 
-def Command_line():
+def command_line():
 	parser = argparse.ArgumentParser(description="DistantDupSearch_GenerateRandomRegions.py generates a random list of regions which contains the same number of regions as in the provided data file of duplicated region, and the randomly generated regions are also of equal length. The file this script outputs is to be used with 'DistantDupSearchWithMatePairs.py' in order to determine whether or not the number of distant mate pairs found for a list of duplicated regions is comparable to a list containing a random selection of regions.")
 	parser.add_argument('-d', default="Data/As_Duplicated_Regions.txt", type=str, help='File containing a list of all DupHMM duplicated regions', metavar='DuplicatedRegions')
 	parser.add_argument('-o', default="Data/As_Random_Regions.txt", type=str, help='Output file for list of randomly selected regions', metavar='OutputDir')
@@ -13,8 +13,8 @@ def Command_line():
 	
 	return(dup_file, o_file)
 
-dup_file, o_file = Command_line()
-chromosome_len = SAM.Chr_Lengths("Data/weigel_col-0/SRR013327,SRR013328_aln.sam.gz")
+dup_file, o_file = command_line()
+chromosome_len = SAM.chr_lengths("Data/weigel_col-0/SRR013327,SRR013328_aln.sam.gz")
 del chromosome_len["chloroplast"]
 del chromosome_len["mitochondria"]
 

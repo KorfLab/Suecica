@@ -4,7 +4,7 @@ from collections import Counter
 sys.path.append("../Packages")
 from GenomeTools import SAM, GFF
 
-def Command_line():
+def command_line():
 	parser = argparse.ArgumentParser(description="RNA_Seq_SAM_Parse.py parses mapped reads from a SAM file, and given gene locations from a GFF file, will output the number of reads mapped to each gene.")
 	#parser.add_argument('-i', default="Data/RNA-Seq/sue_mRNA-Seq_leaf/SE_processing/sue_mRNA_leaf_sw_aln.sam.gz", type=str, help='BLAST results text file to be analyzed for miRNA expression', metavar='BLASTResultsFile')
 	#parser.add_argument('-i', default="Data/RNA-Seq/sue1-mRNA-Seq/set3/Thalyrata/sue_mRNA_set3_sw_aln.sam.gz", type=str, help='BLAST results text file to be analyzed for miRNA expression', metavar='BLASTResultsFile')
@@ -42,10 +42,10 @@ def Command_line():
 
 	return(i_file, gff_file, o_file)
 
-i_file, gff_file, o_file = Command_line()
+i_file, gff_file, o_file = command_line()
 #gff_obj = GFF.Parse_Genes(gff_file, "AtChr1;AtChr2;AtChr3;AtChr4;AtChr5")
-gff_obj = GFF.Parse_Genes(gff_file, "Chr1;Chr2;Chr3;Chr4;Chr5")
-gene_counts = SAM.Reads_Per_Gene(i_file, gff_obj)
+gff_obj = GFF.parse_genes(gff_file, "Chr1;Chr2;Chr3;Chr4;Chr5")
+gene_counts = SAM.reads_per_gene(i_file, gff_obj)
 	
 with open(o_file, 'w') as outfile:
 	outline = "Gene\tReads_mapped\n"

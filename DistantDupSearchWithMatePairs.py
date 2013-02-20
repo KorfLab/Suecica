@@ -3,7 +3,7 @@
 import argparse, gzip, re, os
 from collections import Counter
 
-def Command_line():
+def command_line():
     parser = argparse.ArgumentParser(description="DistantDupSearchWithMatePairs.py searches for reads which (1) map within a duplicated region found by DupHMM, and (2) which have mate pairs that map either to another chromosome or to the same chromosome but outside the original read's duplicated region. Statistics are also calculated for the fraction of reads with mate pairs within the same duplicated region vs. outside that region.")
     parser.add_argument('-f', default="Data/Sue/sue1/sliding_window_preprocess/set5/sue_set5_sw_aln.sam.gz", type=str, help='SAM file with forward and reverse reads.', metavar='SAMFile')
     parser.add_argument('-r', default=1000, type=int, help='Range around duplicated region within which mate pairs should not be considered outside of a duplicated region. Default is 1000 bps', metavar='DupRange')
@@ -20,7 +20,7 @@ def Command_line():
     
     return(reads_filename, dup_filename, dup_range, outdir)
 
-reads_filename, dup_filename, dup_range, outdir = Command_line()
+reads_filename, dup_filename, dup_range, outdir = command_line()
 
 if not os.path.exists(outdir): os.makedirs(outdir)
 

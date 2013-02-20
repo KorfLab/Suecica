@@ -16,7 +16,7 @@ from GenomeTools import Pileup, GFF
 # 3) After the script has run through every gene in duplicated regions and generated a list of SUN-containing genes, genes are output
 #	 in descending order of total per-gene SUN counts.
 
-def Command_line():
+def command_line():
 	parser = argparse.ArgumentParser(description="SUNFinder.py aids in the search for genes in A. suecica which underwent a single ancestral \
 									 duplication event (shortly after the A. suecica species arose), which was then soon followed by at least \
 									 one mutation in one of the duplicates. This script performs the following: \
@@ -50,14 +50,14 @@ def Command_line():
 	
 	return(pileup_file, dup_file, gff_file, adj_value, use_random, sun_genes_filename)
 	
-pileup_file, dup_file, gff_file, adj_value, use_random, sun_genes_filename = Command_line()
+pileup_file, dup_file, gff_file, adj_value, use_random, sun_genes_filename = command_line()
 
 dup_list = []
 with open(dup_file) as infile:
 	for line in infile:
 		line = line.strip()
 		dup_list.append(line)
-gff_genes_dict = GFF.Parse_Genes(gff_file)
+gff_genes_dict = GFF.parse_genes(gff_file)
 if adj_value > 0:
 	for gene_name, [chr, start_pos, end_pos] in gff_genes_dict.gene_dict.items():
 		start_pos = start_pos - adj_value
@@ -68,7 +68,7 @@ if use_random == "Y":
 	#dup_list = sample(gff_genes_dict.gene_dict.keys(),len(dup_list))
 	dup_list = gff_genes_dict.gene_dict.keys() # Delete me soon
 dup_positions = ";".join([chr + ":" + str(s_pos) + "-" + str(e_pos) for gene_name, [chr,s_pos,e_pos] in sorted(gff_genes_dict.gene_dict.items(), key = lambda x: (x[1][0], x[1][1]) ) if gene_name in dup_list ] )
-dup_pileup = Pileup.Parse(pileup_file, False, dup_positions)
+dup_pileup = Pileup.parse(pileup_file, False, dup_positions)
 
 suns_in_gene = Counter()
 suns_in_gene_prob = {}
@@ -82,7 +82,7 @@ with open(sun_genes_filename[:-4] + "_SUNs.txt", 'w') as sue_sun_file: # Debuggi
 		if ref not in ["A","C","G","T"]: continue # Skip ambiguous nucleotide positions
 		gene_name = gff_genes_dict.get_gene_name(chr, pos)
 		if gene_name in dup_list:
-			totalreads, consensus_num, maxSNPs = Pileup.Fisher_SNP_Info(ref,nuclist)
+			totalreads, consensus_num, maxSNPs = Pileup.fisher_snp_info(ref,nuclist)
 			if totalreads < 12 or sum([int(v) for v in maxSNPs.values()]) == 0: continue # Either the total usable reads (consensus + maxSNP)  is < 12, or no SNPs are present
 			is_sun = True
 			#				Actual		Ideal (for 50/50)

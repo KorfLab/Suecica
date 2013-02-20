@@ -4,7 +4,7 @@ from GenomeTools import Pileup, SAM
 import argparse, gzip, re
 import pdb # Delete me
 
-def Command_line():
+def command_line():
 	parser = argparse.ArgumentParser(description="Aa_Mismapping.py (1) helps identify positions in A. suecica which might contain \
 									 mismapped A. arenosa reads, and (2) parses an A. suecica data file to remove reads which contribute \
 									 mismapping-based SNPs. Option (1) is performed by outputting a list of SNPs found in a pileup file \
@@ -23,8 +23,8 @@ def Command_line():
 	
 	return(pileup_file, o_1_file, sam_file, o_2_file)
 
-def Arenosa_SNPs(pileup_file, o_1_file):
-	Aa_SNPs = Pileup.Parse(pileup_file, region_list="Chr1;Chr2;Chr3;Chr4;Chr5") # Only saves SNP positions by default
+def arenosa_snps(pileup_file, o_1_file):
+	Aa_SNPs = Pileup.parse(pileup_file, region_list="Chr1;Chr2;Chr3;Chr4;Chr5") # Only saves SNP positions by default
 	with gzip.open(o_1_file, 'wb') as outfile:
 		for entry in sorted(Aa_SNPs.pileup_dict.items(), key=lambda entry: (entry[0][0], entry[0][1])):
 			(chr, pos), [ref, nuclist] = entry
@@ -37,10 +37,10 @@ def Arenosa_SNPs(pileup_file, o_1_file):
 			outfile.write(bytes(outline,"UTF-8"))
 	return()
 	
-def Filter_SAM(sam_file, SNP_file, o_2_file):
+def filter_sam(sam_file, SNP_file, o_2_file):
 	pattern = r"(\d+)([MSID])"
 	recomp = re.compile(pattern)
-	Aa_SNPs = Pileup.Parse(SNP_file, simplified=True, only_save_SNPs=False, region_list="AtChr1;AtChr2;AtChr3;AtChr4;AtChr5")
+	Aa_SNPs = Pileup.parse(SNP_file, simplified=True, only_save_SNPs=False, region_list="AtChr1;AtChr2;AtChr3;AtChr4;AtChr5")
 	if sam_file[-3:] == ".gz":
 		infile = gzip.open(sam_file, 'rb')
 	else:
@@ -76,7 +76,7 @@ def Filter_SAM(sam_file, SNP_file, o_2_file):
 							if ref != -1: # Ref == -1 when there isn't an A. arenosa SNP at position (chr, i)
 								cur_nuc = nucs[i - s_pos:i - s_pos + 1]
 								if cur_nuc != ref: # Read doesn't contain reference nucleotide
-									total_nucs = Pileup.Sum_nucs(nuclist, True)
+									total_nucs = Pileup.sum_nucs(nuclist, True)
 									SNP = {}
 									SNP["A"] = nuclist[0]
 									SNP["C"] = nuclist[1]
@@ -96,7 +96,7 @@ def Filter_SAM(sam_file, SNP_file, o_2_file):
 								indel_str = "-" + str(val)
 							for i in range(4,len(nuclist)):
 								if nuclist[i][:2] == indel_str:
-									total_nucs = Pileup.Sum_nucs(nuclist, True)
+									total_nucs = Pileup.sum_nucs(nuclist, True)
 									if ( int(nuclist[i][3+int(val):]) / total_nucs ) >= 0.05:
 										# Indel present in >=5% of A. arenosa reads mapped to TAIR9, so consider it a valid mismap; skip read
 										print(str(nuclist[i]), " (", str(ref), "): ", str(round(int(nuclist[i][3+int(val):]) / total_nucs,2)), str(chr), ":", str(i), "\t", str(read_name), sep='') # Delete me
@@ -109,8 +109,8 @@ def Filter_SAM(sam_file, SNP_file, o_2_file):
 						continue
 			outfile.write(bytes(line,"UTF-8"))
 
-pileup_file, o_1_file, sam_file, o_2_file = Command_line()
+pileup_file, o_1_file, sam_file, o_2_file = command_line()
 if pileup_file != "" and o_1_file != "":
-	Arenosa_SNPs(pileup_file, o_1_file)
+	arenosa_snps(pileup_file, o_1_file)
 if o_1_file != "" and sam_file != "" and o_2_file != "":
-	Filter_SAM(sam_file, o_1_file, o_2_file)
+	filter_sam(sam_file, o_1_file, o_2_file)

@@ -74,7 +74,7 @@ class BLAST(threading.Thread):
 		percentdone = round(finishcount / totalthreads * 100,1)
 		print(str(percentdone) + "% done\n")
 
-def BLAST_lyrata_reads(genome):
+def blast_lyrata_reads(genome):
 	# Align all A. lyrata-mapping reads to either A. thaliana (TAIR9) or A. lyrata using blastn, wordsize=9
 	start = time.time()
 	global finishcount
@@ -286,7 +286,7 @@ def compare_alignments():
 	total = round((time.time() - start) / 60,2)
 	print("\nFinished comparing A. lyrata-mapping reads which map to within the duplicated region of At-Chr3 (" + str(total) + " minutes)")
 
-def compile_BLAST_XMLs(genome):
+def compile_blast_xmls(genome):
 	# Compiles the hundreds of individual BLAST XML results files into a single "AsAlReadsMappedToA(t|l).xml" file
 	path = pattern5 = outfilename = ""
 	if genome == "t":
@@ -390,14 +390,14 @@ def genome_info(species):
 					pos = int(match.group(2))
 					nucs = str(match.group(3)).upper()
 					if len(nucs) >= 12:
-						mismap = SNP_count(nucs, species, recomp15, recomp16)
+						mismap = snp_count(nucs, species, recomp15, recomp16)
 						if mismap != "-":
 							genome_pileup[(chr,pos)] = mismap
 				elif species == "t":
 					pos = int(match.group(1))
 					nucs = str(match.group(2)).upper()
 					if len(nucs) >= 12 and pos >= 3300050 and pos <= 3400015:
-						cormap = SNP_count(nucs, species, recomp15, recomp16)
+						cormap = snp_count(nucs, species, recomp15, recomp16)
 						if cormap != "-":
 							genome_pileup[(3,pos)] = cormap
 	
@@ -408,7 +408,7 @@ def genome_info(species):
 		print("\nFinished compiling dictionary containing nucleotide positions which are indicative of correct mapping in a duplicated region (50:50 Con/SNP ratios) in A. thaliana (" + str(total) + " minutes)")
 	return(genome_dict, genome_pileup)
 
-def SNP_count(nucs, species, recomp15, recomp16):
+def snp_count(nucs, species, recomp15, recomp16):
 	SNPs = {x: 0 for x in ('A','T','C','G')}
 	maxSNP = ""
 	maxSNP_value = 0
@@ -469,7 +469,7 @@ def SNP_count(nucs, species, recomp15, recomp16):
 		mapping = maxSNP
 	return(mapping)
 
-def thaliana_BLAST_speedtest():
+def thaliana_blast_speedtest():
 	# Used just for testing purposes to see how quickly BLAST will take given x number of query sequences in a batch.
 	# Time/memory required for BLAST to finish increases quadratically with x. 20,000 sequences per batch appears to be
 	# the highest reasonable amount achievable while the time taken to finish is still approximately linear.
@@ -500,13 +500,13 @@ def thaliana_BLAST_speedtest():
 	print(times)
 	sys.exit(0)
 
-#thaliana_BLAST_speedtest() # Used just for testing purposes. See function for details.
+#thaliana_blast_speedtest() # Used just for testing purposes. See function for details.
 
 #finishcount = 0
 #totalthreads = 0
-#BLAST_lyrata_reads("t") # Blast A. lyrata-mapping sequences against A. thaliana (t) or A. lyrata (l; done for more accurate alignment w/ blastn wordsize=9). Outputs into a bunch of XML files.
-#compile_BLAST_XMLs("t") # Compiles the hundreds of individual BLAST XML results files into a single "AsAlReadsMappedToA(t|l).xml" file
-#BLAST_lyrata_reads("l") # Blast A. lyrata-mapping sequences against A. thaliana (t) or A. lyrata (l; done for more accurate alignment w/ blastn wordsize=9). Outputs into a bunch of XML files.
-#compile_BLAST_XMLs("l") # Compiles the hundreds of individual BLAST XML results files into a single "AsAlReadsMappedToA(t|l).xml" file
+#blast_lyrata_reads("t") # Blast A. lyrata-mapping sequences against A. thaliana (t) or A. lyrata (l; done for more accurate alignment w/ blastn wordsize=9). Outputs into a bunch of XML files.
+#compile_blast_xmls("t") # Compiles the hundreds of individual BLAST XML results files into a single "AsAlReadsMappedToA(t|l).xml" file
+#blast_lyrata_reads("l") # Blast A. lyrata-mapping sequences against A. thaliana (t) or A. lyrata (l; done for more accurate alignment w/ blastn wordsize=9). Outputs into a bunch of XML files.
+#compile_blast_xmls("l") # Compiles the hundreds of individual BLAST XML results files into a single "AsAlReadsMappedToA(t|l).xml" file
 
 compare_alignments() # Opens AsAlReadsMappedToAt.xml and AsAlReadsMappedToAl.xml, parses the BLAST alignments, and compares each read which maps to At-Chr.3 to its best-mapped counterpart in Al. See function for details.

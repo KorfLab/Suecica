@@ -15,7 +15,7 @@ high_gene_reads = Counter()
 low_gene_reads = Counter()
 
 # Open GFF file and make dictionary containing gene names & their positions
-gff_genes_dict = GFF.Parse_Genes(gff_file)
+gff_genes_dict = GFF.parse_genes(gff_file)
 
 # Open list of duplicated meiosis genes and store them
 #dup_genes = []

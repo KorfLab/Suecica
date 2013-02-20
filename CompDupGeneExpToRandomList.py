@@ -2,7 +2,7 @@
 import argparse, random
 from collections import Counter
 
-def Command_line():
+def command_line():
 	parser = argparse.ArgumentParser(description="CompDupGeneExpToRandomList.py establishes whether or not a list of genes believed to be duplicated, on average, have higher expression in Thalyrata-mapped RNA-Seq data when compared to an equally sized list of randomly selected genes.")
 	parser.add_argument('-i', default="Data/RNA-Seq/AsLeaf_vs_ColLeaf/mRNA_Expression_Technicals_Combined.tsv", type=str, help='Input file containing mRNA expression data for A. suecica', metavar='ExpressionFile')
 	parser.add_argument('-c', default=4, type=int, help='Column number of gene expression count table that contains the A. suecica data to be tested.', metavar='ColumnNumber')
@@ -17,7 +17,7 @@ def Command_line():
 	
 	return(exp_file, column_num, dup_file, loop_count)
 
-exp_file, column_num, dup_file, loop_count = Command_line()
+exp_file, column_num, dup_file, loop_count = command_line()
 
 # Store list of A. suecica list of genes believed to be duplicated genes following filtering of Al-reads
 dup_list = []

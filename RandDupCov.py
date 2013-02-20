@@ -77,10 +77,10 @@ def simulate_reads(ref, chr, readlen, readcov, dupnum, duplen, sam, chr_len):
             simulation.wait()
             new_out_fn = out_fn + ".sam"
             if i > 0:
-                reg_SAM = SAM.Parse(new_out_fn, True)
+                reg_SAM = SAM.parse(new_out_fn, True)
                 for j in range(0,len(reg_SAM.sam_list)):
                     reg_SAM.sam_list[j][3] = str(int(reg_SAM.sam_list[j][3]) + i) # Changing SAM file read numbers
-                reg_SAM.Output(new_out_fn)
+                reg_SAM.output(new_out_fn)
             os.remove(temp_fasta)
             os.remove(out_fn + ".fq")
             os.remove(out_fn + ".aln")
@@ -117,17 +117,17 @@ def simulate_reads(ref, chr, readlen, readcov, dupnum, duplen, sam, chr_len):
         simulation = subprocess.Popen(params)
         simulation.wait()
         dup_fn = temp_fasta[:-6] + ".sam"
-        dup_SAM = SAM.Parse(dup_fn, True)
+        dup_SAM = SAM.parse(dup_fn, True)
         for i in range(0,len(dup_SAM.sam_list)):
             dup_SAM.sam_list[i][3] = str(int(dup_SAM.sam_list[i][3]) + spos)
-        dup_SAM.Output(dup_fn[:-4] + "_temp.sam")
+        dup_SAM.output(dup_fn[:-4] + "_temp.sam")
         os.remove(temp_fasta)
         os.remove(temp_fasta[:-6] + ".fq")
         os.remove(temp_fasta[:-6] + ".aln")
         os.remove(dup_fn)
         final_SAM_fns.append(dup_fn[:-4] + "_temp.sam")
     
-    final_SAM = SAM.Parse(final_SAM_fns, True)
+    final_SAM = SAM.parse(final_SAM_fns, True)
     pattern2 = r"Chr\d{1}-(\d+)"
     recomp2 = re.compile(pattern2)
     
@@ -153,7 +153,7 @@ def simulate_reads(ref, chr, readlen, readcov, dupnum, duplen, sam, chr_len):
     for i in range(0,len(final_SAM.header)): # Set chromosome length in header portion of SAM file to correct length (will be 10,000 in temporary simulation SAM files)
         chr = final_SAM.header[i][1][3:]
         final_SAM.header[i][2] = "LN:" + str(len(chr_len[chr]))
-    final_SAM.Output(sam[:-3])
+    final_SAM.output(sam[:-3])
     for file in final_SAM_fns:
         os.remove(file)
     params = ' '.join([str(pypath) + " FixARTSAMFile.py", "-i", sam[:-3], "-o", sam])

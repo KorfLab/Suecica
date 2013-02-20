@@ -4,7 +4,7 @@ from collections import Counter
 import sys; sys.path.append('../Packages/')
 from GenomeTools import GFF
 
-def Command_line():
+def command_line():
 	parser = argparse.ArgumentParser(description="SegmentalDupDiscovery.py, given a list of name-sorted duplicated genes, determines \
 									 how many of them are present in series. Whether or not a gene is present in series is \
 									 determined by a user-specified maximum distance within which two genes can be from one \
@@ -22,13 +22,13 @@ def Command_line():
 	
 	return(dups_file, seg_dist, gff_file, outpath)
 
-dups_file, seg_dist, gff_file, outpath = Command_line()
+dups_file, seg_dist, gff_file, outpath = command_line()
 dup_list = []
 with open(dups_file) as infile:
 	for line in infile:
 		line = line.strip()
 		dup_list.append(line)
-gff_genes = GFF.Parse_Genes(gff_file,create_nuc_dict=False)
+gff_genes = GFF.parse_genes(gff_file,create_nuc_dict=False)
 
 segments = []
 j = 0 # Creates j outside the scope of the following for loop

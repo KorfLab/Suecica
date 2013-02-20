@@ -37,7 +37,7 @@ def get_chr_len(ref):
 pileup, ref, win = command_line()
 chr_lengths = get_chr_len(ref)
 
-PileupFile = Pileup.Parse(pileup,True)
+PileupFile = Pileup.parse(pileup,True)
 
 #windows = [i for i in range(1,1501)]
 windows = [i for i in range(1600,5001,100)]

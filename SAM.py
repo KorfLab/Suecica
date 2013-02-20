@@ -7,7 +7,7 @@ from collections import Counter
 # combine reads from multiple SAM files together into a single file.
 
 
-def Chr_Lengths(filename):
+def chr_lengths(filename):
     ''' Opens a SAM file and returns chromosome names and the lengths of those chromosomes.'''
     chr_len = {}
     SQ_header_began = False
@@ -28,7 +28,7 @@ def Chr_Lengths(filename):
     infile.close()
     return(chr_len)
 
-def Combine(filelist, outfilename):
+def combine(filelist, outfilename):
     ''' Combines SAM files into a single file, each separated by a semicolon.
         Among header lines, only @SQ SN:ChrName  LN:NumberHere are kept from the first SAM file given. '''
     filelist = filelist.split(";")
@@ -97,7 +97,7 @@ def Combine(filelist, outfilename):
     outfile.close()
     print("Combining of SAM files complete!")
 
-def Coverage(sam_files):
+def coverage(sam_files):
     ''' Calculates coverage for entire SAM file.'''
     chr_len = {}
     sam_files = sam_files.split(";")
@@ -134,7 +134,7 @@ def Coverage(sam_files):
             print(str(chr), " coverage: ", str(round(total_count[chr] /  total_pos,2)), "X", sep='')
         print("Overall coverage: ", str(round(sum(total_count.values()) / sum(chr_len.values()),2)), "X\n", sep='')
 
-def Coverage_Window(sam_file, win_list, chr_list, control_use):
+def coverage_window(sam_file, win_list, chr_list):
     ''' Returns histogram of read coverage on a per-chromosome, per-bp-window basis '''
     
     chr_list = chr_list.split(",")
@@ -177,13 +177,6 @@ def Coverage_Window(sam_file, win_list, chr_list, control_use):
             for i in range(0,max(win_db[win][chr].keys())):
                 if i not in win_db[win][chr].keys(): win_db[win][chr][i] = 0
     
-    # If file is to be used to find exp:control ratio, increment all read-per-window counts by 1 (to ensure no division by 0).
-    # Then, calculate % of total reads for each window
-    if control_use == "True":
-        for chr in chr_list:
-            for win in win_list:
-                win_db[win][chr] = {i: (j+1)/total_reads for i, j in win_db[win][chr].items()}
-    
     # Create multi-dimensional per-window, per-chromosome dictionaries for paths and histograms
     path_dict = {win: {} for win in win_list}
     hist_dict = {win: {} for win in win_list}
@@ -193,17 +186,13 @@ def Coverage_Window(sam_file, win_list, chr_list, control_use):
         for chr in chr_list:
             path = ' '.join([str(cov) for (win_num, cov) in sorted(win_db[win][chr].items(), key = lambda win_num: win_num)])
             path_dict[win][chr] = path
-            if control_use == "False":
-                hist = Counter({cov: 0 for cov in range(0,max(win_db[win][chr].values() ) + 1) } )
-                for count in win_db[win][chr].values():
-                    hist[count] += 1
-                hist_dict[win][chr] = hist
-            else:
-                # Only path_dict is used when control_use==True
-                hist_dict = {}
+            hist = Counter({cov: 0 for cov in range(0,max(win_db[win][chr].values() ) + 1) } )
+            for count in win_db[win][chr].values():
+                hist[count] += 1
+            hist_dict[win][chr] = hist
     return(hist_dict, path_dict)
 
-def Read_Length_Hist(filelist):
+def read_length_hist(filelist):
     '''Outputs a histogram of read length in the given SAM files'''
     filelist = filelist.split(";")
     for filename in filelist:
@@ -234,7 +223,7 @@ def Read_Length_Hist(filelist):
             outfile.write(outline)
             outfile.write(outline2)
 
-def Read_Quality(filelist, qual_thr=20):
+def read_quality(filelist, qual_thr=20):
     '''Outputs a histogram of read mapping qualities'''
     filelist = filelist.split(";")
     for filename in filelist:
@@ -273,7 +262,7 @@ def Read_Quality(filelist, qual_thr=20):
         print("\n\nTotal reads:\t\t", str(total_reads))
         print("Total low mapping quality reads:\t", str(total_low_reads), " (", str(round(total_low_reads / total_reads * 100,2)), "%)", sep='')
         
-def Read_Base_Quality(filelist, qual_thr=20):
+def read_base_quality(filelist, qual_thr=20):
     '''Outputs a histogram of base qualities, the percentage of reads containing
        low-quality bases, and the average number of low-quality bases observed
        per read containing at least one low-quality base'''
@@ -320,7 +309,7 @@ def Read_Base_Quality(filelist, qual_thr=20):
         print("Total low quality base-containing reads:\t", str(total_low_reads), " (", str(round(total_low_reads / total_reads * 100,2)), "%)", sep='')
         print("Average number of low quality bases in each low quality base-containing read:\t", str(round(total_low_read_low_base_count / total_low_reads,2)), sep='')
 
-def Reads_Per_Gene(sam_file, gff_genes_dict):
+def reads_per_gene(sam_file, gff_genes_dict):
     ''' Returns a histogram of the number of reads mapped to each gene provided in gff_genes_dict.gene_dict
         Must be provided with a GFF class, which will have gene_dict containing gene names as keys, and
         (chr, start_pos, end_pos) as values, as well as gene_nuc_dict which specifies which gene corresponds
@@ -347,7 +336,7 @@ def Reads_Per_Gene(sam_file, gff_genes_dict):
     infile.close()
     return(gene_counter)
 
-def Trim_Reads(filelist, threshold):
+def trim_reads(filelist, threshold):
     '''Trims a list of SAM files based on a minimum length threshold'''
     filelist = filelist.split(";")
     for filename in filelist:
