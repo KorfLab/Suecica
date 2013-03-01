@@ -3,7 +3,7 @@ import argparse, random, re
 import SAM
 
 def command_line():
-	parser = argparse.ArgumentParser(description="DistantDupSearch_GenerateRandomRegions.py generates a random list of regions which contains the same number of regions as in the provided data file of duplicated region, and the randomly generated regions are also of equal length. The file this script outputs is to be used with 'DistantDupSearchWithMatePairs.py' in order to determine whether or not the number of distant mate pairs found for a list of duplicated regions is comparable to a list containing a random selection of regions.")
+	parser = argparse.ArgumentParser(description="DistantDupSearch_GenerateRandomRegions.py generates a random list of regions which contains the same number of regions as in the provided data file of duplicated region, with the randomly generated regions also of equal length to the real duplicated regions. The file this script outputs is to be used with 'DistantDupSearchWithMatePairs.py' in order to determine whether or not the number of distant mate pairs found for a list of duplicated regions is comparable to a list containing a random selection of regions.")
 	parser.add_argument('-d', default="Data/As_Duplicated_Regions.txt", type=str, help='File containing a list of all DupHMM duplicated regions', metavar='DuplicatedRegions')
 	parser.add_argument('-o', default="Data/As_Random_Regions.txt", type=str, help='Output file for list of randomly selected regions', metavar='OutputDir')
 	

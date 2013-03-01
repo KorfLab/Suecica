@@ -2,7 +2,8 @@
 # Written by Matthew Porter @ UC Davis, Korf and Comai Labs
 import os, gzip
 
-rootdir = "/home/mattchat/SuecicaDupSearch/Data/Sue/SxN_F2s"
+#rootdir = "/home/mattchat/SuecicaDupSearch/Data/Sue/SxN_F2s"
+rootdir = "/home/mattchat/SuecicaDupSearch/Data/Sue/SxN_F2s/RandomExp/LowPerformers"
 
 for root, subfolders, files in os.walk(rootdir):
     for filename in files:
@@ -13,16 +14,16 @@ for root, subfolders, files in os.walk(rootdir):
         
         f_in = os.path.join(root,filename)
         gzipped = False
-        if f_in[-7:] == ".sam.gz":
+        if f_in.endswith(".sam.gz"):
             infile = gzip.open(f_in, 'rb')
             gzipped = True
-        elif f_in[-4:] == ".sam":
+        elif f_in.endswith(".sam"):
             infile = open(f_in)
         
-        if f_in[-7:] == ".sam.gz" or f_in[-4:] == ".sam": # Make sure we're working with .sam, not .fq
+        if f_in.endswith(".sam.gz") or f_in.endswith(".sam"): # Make sure we're working with .sam, not .fq
             print("Parsing ", str(f_in), sep='')
             f_out = f_in[:-7] + "_fixed.sam.gz" # Assume .sam.gz first
-            if f_in[-4:] == ".sam":
+            if f_in.endswith(".sam"):
                 f_out = f_in[:-4] + "_fixed.sam.gz" # Change filename since original is .sam
         
             with gzip.open(f_out, 'wb') as outfile:

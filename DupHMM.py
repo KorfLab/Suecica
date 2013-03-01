@@ -341,10 +341,10 @@ def hmm_dup_search(mode, folder, tp_positions, chromosome, win, pois_lambda, sta
 	path_file = os.path.join(outdir, str(chromosome) + "_path.txt")
 	
 	# Run Viterbi algorithm written in C++
-	run_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),"Viterbi")
+	run_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),"viterbi")
 	params = ' '.join([str(run_script), "-p", str(param_file), "-o", str(obs_file)])
 	HMMRun = subprocess.Popen(params, shell=True, stdout=subprocess.PIPE)
-	path = HMMRun.communicate()[0].decode("utf-8") # Grab path from Viterbi.exe output
+	path = HMMRun.communicate()[0].decode("utf-8") # Grab path from Viterbi output
 	path = path[::-1]
 	
 	# Write path file
@@ -559,7 +559,7 @@ def k_means_clustering(hist_dict):
 								best_cluster_group_for_each_k[k] = best_cluster_group
 								break_for_next_k = True
 								if verbose == True:
-									print("Consensus reached for k=", str(k), " in ", gen_number, " generations due to identity among breeding individuals to the previous 2 generations.\n",
+									print("Consensus reached for k=", str(k), " in ", gen_number, " generations for ", str(win), " bp windows, ", str(chromosome), " due to identity among breeding individuals to the previous 2 generations.\n",
 											str(best_cluster_group[0]), "\t", str(best_cluster_group[1]), "\t", str(sorted(best_cluster_group[2].items())), "\t", str(log(best_cluster_group_for_each_k[k][1] * k)), "\n",sep='')
 								break
 						
@@ -580,7 +580,7 @@ def k_means_clustering(hist_dict):
 								best_cluster_group_for_each_k[k] = best_cluster_group
 								break_for_next_k = True
 								if verbose == True:
-									print("Consensus reached for k=", str(k), " in ", gen_number, " generations due to negligible cluster point changes.\n",
+									print("Consensus reached for k=", str(k), " in ", gen_number, " generations for ", str(win), " bp windows, ", str(chromosome), " due to negligible cluster point changes.\n",
 											str(best_cluster_group[0]), "\t", str(best_cluster_group[1]), "\t", str(sorted(best_cluster_group[2].items())), "\t",
 											str(log(best_cluster_group_for_each_k[k][1] * k)), "\n",sep='')
 								break
@@ -600,7 +600,7 @@ def k_means_clustering(hist_dict):
 					# If so, halt genetic algorithm and return the k-1 cluster groups to be used for the creation of HMM probabilities.
 					k_cluster_count_dict[win][chromosome] = k-1
 					k_cluster_group_dict[win][chromosome] = best_cluster_group_for_each_k[k-1]
-					print("k=", str(k-1), " is optimal:\n", str(best_cluster_group_for_each_k[k-1][0]), "\t", str(best_cluster_group_for_each_k[k-1][1]), "\t", sorted(best_cluster_group_for_each_k[k-1][2].items()), "\n", sep='')
+					print("k=", str(k-1), " is optimal for ", str(win), " bp windows, ", str(chromosome), ":\n", str(best_cluster_group_for_each_k[k-1][0]), "\t", str(best_cluster_group_for_each_k[k-1][1]), "\t", sorted(best_cluster_group_for_each_k[k-1][2].items()), "\n", sep='')
 					break
 			if k == 50:
 				print("Failed to converge with 50 clusters or less. Program will now end.")
@@ -723,12 +723,13 @@ def prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cn
 				dist_to_params_mode_two(hist_dict[win][chromosome], k_cluster_count_dict[win][chromosome], k_cluster_group_dict[win][chromosome][0], k_cluster_group_dict[win][chromosome][2], win, chromosome, sam, outdir)
 				
 				# Run HMM using generated parameter file and observation file
-				k_cluster_group_dict = k_cluster_group_dict[win][chromosome][0]
+				k_cluster_group_dict_temp = k_cluster_group_dict[win][chromosome][0]
 				k_data_count_dict = k_cluster_group_dict[win][chromosome][2]
 				# Assign cluster group with the most data points as the '1X' region, around which all other cluster groups
-				# will have their relative fold coverage calculated
+				# will have their relative fold coverage calculated. May not actually represent 1X region, but this at
+				# least gives all other CNVs a baseline to be compared to.
 				single_copy_lambda = sorted(k_data_count_dict.items(), key = lambda entry: entry[1], reverse=True)[0][0]
-				hmm_dup_search(mode, outdir, tp_positions, chromosome, win, single_copy_lambda, k_cluster_group_dict, 0)
+				hmm_dup_search(mode, outdir, tp_positions, chromosome, win, single_copy_lambda, k_cluster_group_dict_temp, 0)
 
 def sam_to_wincov(sam_file, win_list, chromosome_list, outdirpart):
 	# Check to see if, for a given window size, all chromosomes have already had their
