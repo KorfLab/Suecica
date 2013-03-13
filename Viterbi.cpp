@@ -8,7 +8,7 @@
 #include <vector>
 using namespace std;
 
-class Viterbi_0thOrder
+class Viterbi
 {
 private:
 	string param_filename;
@@ -16,12 +16,12 @@ private:
 	bool control_use;
 	vector<int> obs;							// Create vector to contain HMM observations
 	vector<char> states;						// Create vector to contain HMM states
-	vector<double> start_p;				// Create vector to contain HMM start probabilities
-	vector<vector<double> > trans_p;		// Create vector to contain HMM transition probabilities
-	vector<vector<double> > emit_p;		// Create vector to contain HMM emission probabilities
-	vector<double> end_p;					// Create vector to contain HMM end probabilities
+	vector<double> start_p;						// Create vector to contain HMM start probabilities
+	vector<vector<double> > trans_p;			// Create vector to contain HMM transition probabilities
+	vector<vector<double> > emit_p;				// Create vector to contain HMM emission probabilities
+	vector<double> end_p;						// Create vector to contain HMM end probabilities
 	vector<vector<int> > path;					// Create vector to contain HMM paths. Each nested vector contains a path for each starting state
-	vector<vector<double> > V;				// Create vector to contain HMM path probabilities. Each entry corresponds to the cumulative probability for each starting state's path
+	vector<vector<double> > V;					// Create vector to contain HMM path probabilities. Each entry corresponds to the cumulative probability for each starting state's path
 
 	void ParseParams();
 	bool is_integer(const string &str);
@@ -29,10 +29,10 @@ private:
 
 public:
 	string GetOptimalPath();
-	Viterbi_0thOrder(string t_paramfilename, string t_obsfilename);
+	Viterbi(string t_paramfilename, string t_obsfilename);
 };
 
-string Viterbi_0thOrder::GetOptimalPath()
+string Viterbi::GetOptimalPath()
 {
 	// Now that parameters have been stored in the object, calculate the most probable path and return it
 	const int emit_num = emit_p[0].size();	// Number of possible outputs from each state (with Prob != 0)
@@ -134,17 +134,17 @@ string Viterbi_0thOrder::GetOptimalPath()
 	return finalpath;
 }
 
-bool Viterbi_0thOrder::is_integer(const string &str)
+bool Viterbi::is_integer(const string &str)
 {
 	return str.find_first_not_of("0123456789") == string::npos;
 }
 
-bool Viterbi_0thOrder::is_long(const string &str)
+bool Viterbi::is_long(const string &str)
 {
 	return str.find_first_not_of("0123456789.e-") == string::npos;
 }
 
-void Viterbi_0thOrder::ParseParams()
+void Viterbi::ParseParams()
 {
 	ifstream inFile;
 	const int NULL_VAL = 0, STATES = 1, START_PROB = 2, TRANS_PROB = 3, EMIT_PROB = 4, END_PROB = 5, OBSERVATIONS = 6;
@@ -157,6 +157,7 @@ void Viterbi_0thOrder::ParseParams()
 	}
 	string line;
 	int cur_state = -1, prev_state = -1, next_state = 0; // cur_state used in emit_p, prev_state and next_state used in trans_p
+	// while (getline(inFile, line)
 	while (inFile.good())
 	{
 		inFile >> line;
@@ -250,15 +251,10 @@ void Viterbi_0thOrder::ParseParams()
 		}
 	}
 	inFile.close();
-	//states.shrink_to_fit();
 	vector<char>(states).swap(states);
-	//start_p.shrink_to_fit();
 	vector<double>(start_p).swap(start_p);
-	//end_p.shrink_to_fit();
 	vector<double>(end_p).swap(end_p);
-	//trans_p.shrink_to_fit();
-	//emit_p.shrink_to_fit();
-	if (obs_filename.length() != 0)	// Observations were provided via the observation file
+	if (obs_filename.length() != 0)			// Observations were provided via the observation file
 	{
 		inFile.open(obs_filename.c_str());
 		inFile.seekg(0,ios::end);			// Used to find end of file, determine file size
@@ -284,7 +280,7 @@ void Viterbi_0thOrder::ParseParams()
 	}
 }
 
-Viterbi_0thOrder::Viterbi_0thOrder(string t_paramfilename, string t_obsfilename)
+Viterbi::Viterbi(string t_paramfilename, string t_obsfilename)
 {
 	param_filename = t_paramfilename;
 	obs_filename = t_obsfilename;
@@ -293,13 +289,12 @@ Viterbi_0thOrder::Viterbi_0thOrder(string t_paramfilename, string t_obsfilename)
 
 int main(int argc, char* argv[])
 {
-	int i = 0;
 	string param_filename = "";
 	string obs_filename = "";
 	bool control_use = false;
 	const int NULL_VAL = 0, GRAB_FILENAME = 1, GRAB_OBS = 2;
 	int mode = NULL_VAL;
-	for (; i < argc; i++)
+	for (int i = 0; i < argc; i++)
 	{
 		string temp = argv[i];
 		if (temp == "-p") {mode = GRAB_FILENAME;}
@@ -313,7 +308,7 @@ int main(int argc, char* argv[])
 			obs_filename += argv[i];
 		}
 	}
-	Viterbi_0thOrder myHMM(param_filename, obs_filename);
+	Viterbi myHMM(param_filename, obs_filename);
 	string path = myHMM.GetOptimalPath();
 	cout << path;
 	

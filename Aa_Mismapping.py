@@ -47,7 +47,7 @@ def filter_sam(sam_file, SNP_file, o_2_file):
 		infile = open(sam_file)
 	with gzip.open(o_2_file, 'wb') as outfile:
 		for line in infile:
-			if sam_file[-3:] == ".gz": line = str(line, encoding='utf8')
+			if sam_file[-3:] == ".gz": line = line.decode('utf-8')
 			line_split = line.split("\t")
 			if line_split[0][:1] != "@":
 				chr = line_split[2]

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import pdb # Delete me
 import argparse, os, gzip
 import sys; sys.path.append('../Packages/')
 from GenomeTools import GFF, SAM
@@ -23,7 +24,8 @@ in_folder, o_file, gff_file = command_line()
 gff_genes_dict = GFF.Parse_genes(gff_file, create_nuc_dict=True)
 library_gene_counts = {}
 for (gene, [chromosome, spos, epos]) in gff_genes_dict:
-	library_gene_counts[gene] = []
+	if not gff_genes_dict.is_transposon(gene) and not gff_genes_dict.is_common_rna(gene):
+		library_gene_counts[gene] = []
 for root, subfolders, files in os.walk(in_folder):
 	for f_name in files:
 		print("Working on", str(f_name))
@@ -39,17 +41,18 @@ for root, subfolders, files in os.walk(in_folder):
 		else:
 			infile = open(f_in)
 		for line in infile:
-			if gzipped == True: line = str(line, encoding='utf8')
+			if gzipped == True: line = line.decode('utf-8')
 			line = line.split()
 			if line[0][:1] != "@" and int(line[4]) >= 20: total_reads += 1
 		
 		# Change read counts to RPKM value
 		for gene, count in temp_gene_counts.items():
-			(chromosome, s_pos, e_pos) = gff_genes_dict.loc(gene)
-			dist_kb = (e_pos - s_pos) / 1000
-			RPK = count / dist_kb
-			RPKM = RPK / (total_reads / 1000000)
-			library_gene_counts[gene].append(RPKM)
+			if not gff_genes_dict.is_transposon(gene) and not gff_genes_dict.is_common_rna(gene):
+				(chromosome, s_pos, e_pos) = gff_genes_dict.loc(gene)
+				dist_kb = (e_pos - s_pos) / 1000
+				RPK = count / dist_kb
+				RPKM = RPK / (total_reads / 1000000)
+				library_gene_counts[gene].append(RPKM)
 
 # Calculate gene read count means and variance
 gene_means = {}
@@ -64,6 +67,6 @@ for gene, RPKM_list in library_gene_counts.items():
 with open(o_file, 'w') as outfile:
 	outline = "Gene\tMean\tVariance\n"
 	outfile.write(outline)
-	for gene in sorted(gff_genes_dict.gene_dict.keys()):
+	for gene in sorted(library_gene_counts.keys()):
 		outline = "\t".join([str(gene), str(gene_means[gene]), str(gene_variances[gene])]) + "\n"
 		outfile.write(outline)

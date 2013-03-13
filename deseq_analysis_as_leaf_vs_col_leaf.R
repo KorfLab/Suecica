@@ -1,5 +1,6 @@
 setwd("C:/Dropbox/SuecicaDupSearch/Data/RNA-Seq/AsLeaf_vs_ColLeaf")
-myPath = file.path("C:/Dropbox/SuecicaDupSearch/Data/RNA-Seq/AsLeaf_vs_ColLeaf/mRNA_Expression_Technicals_Combined.tsv")
+#myPath = file.path("C:/Dropbox/SuecicaDupSearch/Data/RNA-Seq/AsLeaf_vs_ColLeaf/mRNA_Expression_Technicals_Combined.tsv")
+myPath = file.path("C:/Dropbox/SuecicaDupSearch/Data/RNA-Seq/AsLeaf_vs_ColLeaf/mRNA_Expression_0_hr_Technicals_Combined.tsv")
 counts = read.table(myPath, header=TRUE, row.names=1)
 metadata = data.frame(
 	row.names = colnames(counts),

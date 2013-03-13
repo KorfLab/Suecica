@@ -26,18 +26,22 @@ def command_line():
 exp_file, column_num, sam_file, dup_file, gff_file, loop_count = command_line()
 
 # Open GFF file and make dictionary containing gene names & their positions
-gff_genes_dict = GFF.Parse_genes(gff_file, create_nuc_dict=True)
+gff_genes_dict = GFF.Parse_genes(gff_file, create_nuc_dict=False)
 
 # Store A. suecica list of DupHMM duplicated genes
 dup_list = []
 with open(dup_file) as infile:
-	for line in infile:
-		line = line.strip()
-		dup_list.append(line)
+	for gene_name in infile:
+		gene_name = gene_name.strip()
+		dup_list.append(gene_name)
 dup_list_len = len(dup_list)
 
 # Get total number of reads w/ quality >= 20
-total_reads = SAM.total_reads(sam_file)
+parse_sam = SAM.Parse(sam_file)
+parse_sam.total_reads()
+parse_sam.start()
+total_reads = parse_sam.get_total_reads()
+#total_reads = SAM.total_reads(sam_file)
 
 # Store A. suecica gene counts
 gene_count_dict = Counter()
@@ -45,13 +49,19 @@ with open(exp_file) as infile:
 	for line in infile:
 		line = line.split()
 		gene_name = line[0]
-		if gene_name != "Gene":
+		if gene_name != "Gene": # Not looking at first line
+			# Do not look at RPKM read counts for transposons, rRNAs, or tRNAs
 			gene_counts = int(line[column_num-1])
-			(chromosome, s_pos, e_pos) = gff_genes_dict.loc(gene)
+			
+			# Raw read counts
+			#gene_count_dict[gene_name] = gene_counts
+			
+			# RPKM read counts
+			(chromosome, s_pos, e_pos) = gff_genes_dict.loc(gene_name)
 			dist_kb = (e_pos - s_pos) / 1000
-			RPK = count / dist_kb
+			RPK = gene_counts / dist_kb
 			RPKM = RPK / (total_reads / 1000000)
-			gene_count_dict[gene_name] = gene_counts
+			gene_count_dict[gene_name] = RPKM
 
 # Sum up A. suecica duplicated gene counts
 sue_dup_sum = sum([c for gene, c in gene_count_dict.items() if gene in dup_list])
@@ -66,4 +76,5 @@ for i in range(0,loop_count):
 	if rand_list_sum > sue_dup_sum:
 		sue_not_greater += 1
 
-print("The duplicated list of genes was not greater than an equally sized, randomly generated list of genes' expression sum for " + str(sue_not_greater) + " out of " + str(loop_count) + " randomly generated lists.")
+print("The duplicated list of genes' RPKM value was not greater than an equally sized, randomly generated list of genes' expression sum for "
+	  + str(sue_not_greater) + " out of " + str(loop_count) + " randomly generated lists.")

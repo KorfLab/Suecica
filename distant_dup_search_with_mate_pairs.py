@@ -60,7 +60,7 @@ stats_o_fn = os.path.join(outdir, "Summary_Stats.txt")
 
 with gzip.open(reads_filename, 'rb') as infile:
     for line in infile:
-        line = str(line, encoding='utf8')
+        line = line.decode('utf-8')
         line = line.split("\t")
         if len(line[0]) > 3:
             read_name = line[0]

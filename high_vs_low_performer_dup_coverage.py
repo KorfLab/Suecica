@@ -46,7 +46,7 @@ if dup_filename == "":
 # Count up the number of reads per gene for the High Performers file
 with gzip.open(high_filename, 'rb') as infile:
 	for line in infile:
-		line = str(line, encoding='utf8')
+		line = line.decode('utf-8')
 		if line[:1] != "@":
 			line = line.split("\t")
 			high_total_cov += 1
@@ -59,7 +59,7 @@ with gzip.open(high_filename, 'rb') as infile:
 # Count up the number of reads per gene for the Low Performers file
 with gzip.open(low_filename, 'rb') as infile:
 	for line in infile:
-		line = str(line, encoding='utf8')
+		line = line.decode('utf-8')
 		if line[:1] != "@":
 			line = line.split("\t")
 			low_total_cov += 1

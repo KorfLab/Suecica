@@ -22,7 +22,7 @@ def chr_lengths(filename):
     else:
         infile = open(filename)
     for line in infile:
-        if filename[-3:] == ".gz": line = str(line, encoding='utf8')
+        if filename[-3:] == ".gz": line = line.decode('utf-8')
         line = line.split("\t")
         if line[0] == "@SQ":
             SQ_header_began = True
@@ -47,7 +47,7 @@ def coverage(sam_files):
             infile = open(sam_file)
         
         for line in infile:
-            if sam_file[-3:] == ".gz": line = str(line, encoding='utf8')
+            if sam_file[-3:] == ".gz": line = line.decode('utf-8')
             line = line.split("\t")
             if line[0][0] != "@":
                 chromosome = line[2]
@@ -88,7 +88,7 @@ def coverage_window(sam_file, win_list, chr_list):
     else:
         infile = open(sam_file)
     for line in infile:
-        if sam_file[-3:] == ".gz": line = str(line, encoding='utf8')
+        if sam_file[-3:] == ".gz": line = line.decode('utf-8')
         split_line = line.split("\t")
         chromosome = str(split_line[2])
         # Ignore read if it does not map (*) or if mapped to a chromosome not being considered
@@ -143,7 +143,7 @@ def read_length_hist(filelist):
             infile = open(filename)
         
         for line in infile:
-            if gzipped == True: line = str(line, encoding='utf8')
+            if gzipped == True: line = line.decode('utf-8')
             splitlist = line.split()
             if len(splitlist) > 9:
                 length = len(splitlist[9]) # Nucleotides in read
@@ -178,7 +178,7 @@ def read_quality(filelist, qual_thr=20):
             infile = open(filename)
         
         for line in infile:
-            if gzipped == True: line = str(line, encoding='utf8')
+            if gzipped == True: line = line.decode('utf-8')
             splitlist = line.split()
             if len(splitlist) > 9:
                 chromosome = str(splitlist[2])
@@ -220,7 +220,7 @@ def read_base_quality(filelist, qual_thr=20):
             infile = open(filename)
         
         for line in infile:
-            if gzipped == True: line = str(line, encoding='utf8')
+            if gzipped == True: line = line.decode('utf-8')
             is_low_read = False
             splitlist = line.split()
             if len(splitlist) > 10:
@@ -257,7 +257,7 @@ def reads_per_gene(sam_file, gff_genes_dict):
         infile = open(sam_file)
     gene_counter = Counter({gene: 0 for gene in gff_genes_dict.gene_dict.keys()})
     for line in infile:
-        if sam_file[-3:] == ".gz": line = str(line, encoding='utf8')
+        if sam_file[-3:] == ".gz": line = line.decode('utf-8')
         split_line = line.split("\t")
         if len(split_line) > 4:
             chromosome = str(split_line[2])
@@ -282,7 +282,7 @@ def total_reads(f_in):
     else:
         infile = open(f_in)
     for line in infile:
-        if gzipped == True: line = str(line, encoding='utf8')
+        if gzipped == True: line = line.decode('utf-8')
         line = line.split()
         if line[0][:1] != "@" and int(line[4]) >= 20: total_reads += 1
     return total_reads
@@ -303,7 +303,7 @@ def trim_reads(filelist, threshold):
             infile = open(filename, 'r')
             outfile = open(outfilename, 'w')
         for line in infile:
-            if gzipped == True: line = str(line, encoding='utf8')
+            if gzipped == True: line = line.decode('utf-8')
             splitlist = line.split()
             if len(splitlist) > 9:
                 if len(splitlist[9]) >= threshold: # Nucleotides in read

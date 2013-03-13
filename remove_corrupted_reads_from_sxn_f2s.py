@@ -29,7 +29,7 @@ for root, subfolders, files in os.walk(rootdir):
             with gzip.open(f_out, 'wb') as outfile:
                 for line in infile:
                     line_num += 1
-                    if gzipped == True: line = str(line, encoding='utf8')
+                    if gzipped == True: line = line.decode('utf-8')
                     if line[:3] != "@SQ":
                         if line[:6] == "SOLEXA":
                             normal_reads += 1
