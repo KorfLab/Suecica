@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.2
+#!/usr/bin/env python3
 # Written by Matthew Porter @ UC Davis, Korf and Comai Labs
 import argparse, re, random, os, subprocess, sys
 from collections import Counter, OrderedDict
@@ -112,10 +112,10 @@ def command_line():
 	parser.add_argument('-chr', default="All", type=str, help='Chromosome to run HMM on (Default=Run HMM on all chromosomes). To look at >1 chromosome but not all chromosomes, provide them in a comma-delimited format: e.g. "Chr1,Chr2"', metavar='Chromosome')
 	parser.add_argument('-w', default="", type=str, help='Window size the HMM will use, in bps (Default=2500). To look at multiple windows, provide them in a comma-delimited format: e.g. "1000,2000,2500,3000".', metavar='Window')
 	parser.add_argument('-scn', default="1,2,5", type=str, help='Mode 1 Feature: Copy numbers for HMM states, separated by commas and listed in increasing numerical order (Default="1,2,5").', metavar='StateCopyNum')
-	parser.add_argument('-sn', default="S,D,H", type=str, help='Mode 1 Feature: Single character names corresponding to copy number HMM states, separated by commas and listed in increasing numerical order (Default="S,D,H", short for Single,Double,High).', metavar='StateNames')
+	parser.add_argument('-sn', default="", type=str, help='Mode 1 Feature (Optional): Single character names corresponding to copy number HMM states, separated by commas and listed in increasing numerical order. Example: If using 1,2,5 as CNV states, try "S,D,H", short for Single,Double,High. (Default="A,B,C...")', metavar='StateNames')
 	parser.add_argument('-l', default=0, type=float, help='Mode 1 Feature: Manually provide a lambda value for the poisson distribution representing a single copy region. Entering this skips Poisson regression over the per-window read count histogram.)', metavar='LambdaMean')
 	parser.add_argument('-trans', default=-50, type=float, help='Mode 1 Feature: Log probability for moving from same state->different state (Default=-50, Suggested:-50 or -100). Same State->Same State probability is unchangeable from 1.', metavar='TransProb')
-	parser.add_argument('-thr', default="10X,20X", type=str, help='Mode 1 Feature: Threshold value for read counts. If a window contains more reads than the threshold, the previous window\'s state and probability are copied to the read spike window, effectively ignoring read spikes. Multiple comma-separated values can be provided here for multiple re-runs, e.g. "100,200". Threshold can also be set relative to the lambda value for a 1X region, e.g. "10X,20X". Default="10X,20X"', metavar='ReadThreshold')
+	parser.add_argument('-thr', default="10X", type=str, help='Mode 1 Feature: Threshold value for read counts. If a window contains more reads than the threshold, the previous window\'s state and probability are copied to the read spike window, effectively ignoring read spikes. Multiple comma-separated values can be provided here for multiple re-runs, e.g. "100,200". Threshold can also be set relative to the lambda value for a 1X region, e.g. "10X,20X". Default="10X,20X"', metavar='ReadThreshold')
 	parser.add_argument('-v', action='store_true', help='Turns on verbose output for k-means clustering')
 	
 	args = parser.parse_args()
@@ -127,6 +127,8 @@ def command_line():
 	win_list = [int(entry) for entry in win_list.split(',')]
 	state_cns = args.scn
 	state_names = args.sn
+	if state_names == "":
+		state_names = ",".join([chr(x) for x in range(65,65+len(state_cns))])
 	pois_lambda = args.l
 	trans_prob = args.trans
 	t_count = (args.thr).split(",")
@@ -181,7 +183,7 @@ def dist_to_params_mode_one(states, pois_lambda, trans_prob, t_count, hist, win,
 	# Create parameter file
 	# Call dist_to_params_outline_mode_one to create the line of text to be written out
 	outline = dist_to_params_outline_mode_one(states, trans_prob, prob_dict)
-	t_outdir = os.path.join(outdir,str(win) + "bp-window/" + str(t_count) + "_read_threshold/")
+	t_outdir = os.path.join(outdir,str(win) + "bp_window/" + str(t_count) + "_read_threshold/")
 	if not os.path.exists(t_outdir): os.makedirs(t_outdir)
 	outfilename = os.path.join(t_outdir, str(chromosome) + "_params.txt")
 	with open(outfilename, 'w') as outfile:
@@ -239,7 +241,7 @@ def dist_to_params_mode_two(hist, k_cluster_count, k_loc, k_data_count, win, chr
 	# Create parameter file
 	# Call dist_to_params_outline_mode_two to create the line of text to be written out
 	outline = dist_to_params_outline_mode_two(k_loc, prob_dict, trans_prob_dict)
-	t_outdir = os.path.join(outdir,str(win) + "bp-window/")
+	t_outdir = os.path.join(outdir,str(win) + "bp_window/")
 	if not os.path.exists(t_outdir): os.makedirs(t_outdir)
 	outfilename = os.path.join(t_outdir, str(chromosome) + "_params.txt")
 	with open(outfilename, 'w') as outfile:
@@ -335,7 +337,7 @@ def hmm_dup_search(mode, folder, tp_positions, chromosome, win, pois_lambda, sta
 	# HMM_Dup_search runs the HMM using a Viterbi algorithm written in C++ .
 	# It waits for the HMM run to complete, grabs the HMM results from Viterbi's output, then parses and outputs results.
 	
-	outdir = os.path.join(folder, str(win) + "bp-window/")
+	outdir = os.path.join(folder, str(win) + "bp_window/")
 	param_file = os.path.join(outdir, str(t_count) + "_read_threshold/" + str(chromosome) + "_params.txt")
 	obs_file = os.path.join(outdir, str(chromosome) + "_obs.txt")
 	path_file = os.path.join(outdir, str(chromosome) + "_path.txt")
@@ -622,7 +624,7 @@ def prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cn
 	else:
 		chromosome_list = [chromosome_entry for chromosome_entry in chromosome.split(',')]
 	
-	# Create the HMM observation files (path_dict, an OrderedDict containings # of reads per window in sequential order)
+	# Create the HMM observation files (path_dict, a dictionary containings # of reads per window in sequential order)
 	# and reads-per-window histograms (hist_dict, a dictionary whose values are chromosome-specific Counters representing reads-per-window)
 	hist_dict, path_dict = sam_to_wincov(sam, win_list, chromosome_list, outdir)
 	
@@ -634,7 +636,7 @@ def prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cn
 		if not hist_dict[win]:
 			# If this dictionary entry is empty for some window, grab those histograms from files
 			for chromosome in chromosome_list:
-				hist_i_fn = os.path.join(outdir, str(win) + "bp-window/" + str(chromosome) + "_hist.txt")
+				hist_i_fn = os.path.join(outdir, str(win) + "bp_window/" + str(chromosome) + "_hist.txt")
 				with open(hist_i_fn) as infile:
 					inlines = infile.readlines()
 					hist = Counter()
@@ -658,9 +660,9 @@ def prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cn
 				for chromosome in chromosome_list:
 					# First create text file for R script containing the filename for the read histogram
 					o_fn = "HMMInputfiles.txt"
-					i_fn_1 = os.path.join(outdir,str(win) + "bp-window/" + str(chromosome) + "_hist_distfits.txt")
+					i_fn_1 = os.path.join(outdir,str(win) + "bp_window/" + str(chromosome) + "_hist_distfits.txt")
 					if not os.path.exists(i_fn_1):
-						i_fn_2 = os.path.join(outdir, str(win) + "bp-window/" + str(chromosome) + "_hist.txt")
+						i_fn_2 = os.path.join(outdir, str(win) + "bp_window/" + str(chromosome) + "_hist.txt")
 						line = str(i_fn_2) + "\n"
 						with open(o_fn, 'w') as outfile:
 							outfile.write(line)
@@ -697,10 +699,9 @@ def prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cn
 		# Assign states and their corresponding character codes
 		state_cns_list = state_cns.split(',')
 		state_names_list = state_names.split(',')
-		states = OrderedDict({float(state_cns_list[i]): state_names_list[i] for i in range(0,len(state_cns_list))})
-		# OrderedDict is slightly bugged, as it does not add items in correctly when fractional copy state numbers are used
-		# To correct for this, we sort states.items() and convert it again to an OrderedDict
-		states = OrderedDict(sorted(states.items()))
+		states = OrderedDict()
+		for i in range(0,len(state_cns_list)):
+			states[float(state_cns_list[i])] = state_names_list[i]
 		
 		# Cycle over each window, chromosome, and threshold value combination provided and run HMM for each combination
 		for win in win_list:
@@ -741,7 +742,7 @@ def sam_to_wincov(sam_file, win_list, chromosome_list, outdirpart):
 		for chromosome in chromosome_list:
 			# Check here to see if an observation file exists. If so, assume all files have
 			# already been generated for this chromosome & window combination
-			i_fn = os.path.join(outdirpart, str(win) + "bp-window/" + str(chromosome) + "_obs.txt")
+			i_fn = os.path.join(outdirpart, str(win) + "bp_window/" + str(chromosome) + "_obs.txt")
 			if os.path.exists(i_fn): not_needed += 1
 		# If we did not see an observation file for all chromosomes to be run on, re-create all
 		# the HMM observation and histogram files
@@ -759,14 +760,14 @@ def sam_to_wincov(sam_file, win_list, chromosome_list, outdirpart):
 		# Check to see if folders have already been made for the provided windows. If not, make them.
 		for chromosome in chromosome_list:
 			for win in win_list:
-				outdir = os.path.join(outdirpart,str(win) + "bp-window/")
+				outdir = os.path.join(outdirpart,str(win) + "bp_window/")
 				print(outdirpart)
 				print(outdir)
 				if not os.path.exists(outdir): os.makedirs(outdir)
 		
 		# Write out per-window read count histograms and paths
 		for win in win_list:
-			outdir = os.path.join(outdirpart,str(win) + "bp-window/")
+			outdir = os.path.join(outdirpart,str(win) + "bp_window/")
 			for chromosome in chromosome_list:
 				outfilename1 = os.path.join(outdir, str(chromosome) + "_obs.txt")
 				outfilename2 = os.path.join(outdir, str(chromosome) + "_hist.txt")
@@ -785,7 +786,10 @@ def sam_to_wincov(sam_file, win_list, chromosome_list, outdirpart):
 mode, sam, gff, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir = command_line()
 
 # Determine the names of chromosomes and their lengths
-chr_len = SAM.chr_lengths(sam)
+sam_parser = SAM.Parse(sam)
+sam_parser.chr_lengths()
+sam_parser.start()
+chr_len = sam_parser.get_chr_lengths()
 
 # If a GFF file is provided, determine the location of all transposons
 # This is useful for quickly identifying false positive duplication calls

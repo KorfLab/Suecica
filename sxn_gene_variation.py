@@ -21,7 +21,7 @@ in_folder, o_file, gff_file = command_line()
 
 # Open GFF file and make dictionary containing gene names & their positions
 # Then add the per-library gene read counts to a dictionary
-gff_genes_dict = GFF.Parse_genes(gff_file, create_nuc_dict=True)
+gff_genes_dict = GFF.Parse(gff_file, create_nuc_dict=True)
 library_gene_counts = {}
 for (gene, [chromosome, spos, epos]) in gff_genes_dict:
 	if not gff_genes_dict.is_transposon(gene) and not gff_genes_dict.is_common_rna(gene):
@@ -30,7 +30,10 @@ for root, subfolders, files in os.walk(in_folder):
 	for f_name in files:
 		print("Working on", str(f_name))
 		f_in = os.path.join(root,f_name)
-		temp_gene_counts = SAM.reads_per_gene(f_in, gff_genes_dict)
+		parse_sam = SAM.Parse(f_in)
+		parse_sam.reads_per_gene(gff_genes_dict)
+		parse_sam.start()
+		temp_gene_counts = parse_sam.get_reads_per_gene()
 		
 		# Count up the total number of reads in the library
 		gzipped = False

@@ -23,7 +23,7 @@ high_gene_reads = Counter()
 low_gene_reads = Counter()
 
 # Open GFF file and make dictionary containing gene names & their positions
-gff_genes_dict = GFF.Parse_genes(gff_file, create_nuc_dict=True)
+gff_genes_dict = GFF.Parse(gff_file, create_nuc_dict=True)
 
 # Open list of duplicated meiosis genes and store them
 if dup_filename != "":

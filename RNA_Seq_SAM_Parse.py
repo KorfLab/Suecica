@@ -45,7 +45,10 @@ def command_line():
 i_file, gff_file, o_file = command_line()
 #gff_obj = GFF.Parse_Genes(gff_file, "AtChr1;AtChr2;AtChr3;AtChr4;AtChr5")
 gff_obj = GFF.parse_genes(gff_file, "Chr1;Chr2;Chr3;Chr4;Chr5")
-gene_counts = SAM.reads_per_gene(i_file, gff_obj)
+parse_sam = SAM.Parse(i_file)
+parse_sam.reads_per_gene(gff_obj)
+parse_sam.start()
+gene_counts = parse_sam.get_reads_per_gene()
 	
 with open(o_file, 'w') as outfile:
 	outline = "Gene\tReads_mapped\n"

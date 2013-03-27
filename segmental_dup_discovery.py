@@ -28,7 +28,7 @@ with open(dups_file) as infile:
 	for line in infile:
 		line = line.strip()
 		dup_list.append(line)
-gff_genes = GFF.Parse_genes(gff_file,create_nuc_dict=False)
+gff_genes = GFF.Parse(gff_file,create_nuc_dict=False)
 
 segments = []
 j = 0 # Creates j outside the scope of the following for loop
