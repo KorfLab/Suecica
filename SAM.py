@@ -85,7 +85,7 @@ class Parse:
         ''' Provide various forms of command-line and file output '''
         # Print out total reads mapping
         if self.total_reads_run:
-            print("There are ", str(self.total_reads_count), "r eads (q>=", str(self.map_qual_thr), ") mapping in this library.", sep='')
+            print("There are ", str(self.total_reads_count), " reads (q>=", str(self.map_qual_thr), ") mapping in this library.", sep='')
         
         # Print out library coverage
         if self.coverage_run:
