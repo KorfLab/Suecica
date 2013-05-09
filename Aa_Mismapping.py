@@ -28,10 +28,6 @@ def arenosa_snps(pileup_file, o_1_file):
 	with gzip.open(o_1_file, 'wb') as outfile:
 		for entry in sorted(Aa_SNPs.pileup_dict.items(), key=lambda entry: (entry[0][0], entry[0][1])):
 			(chr, pos), [ref, nuclist] = entry
-			#nuclist_str = ""
-			#for entry in nuclist:
-			#	nuclist_str += str(entry) + "\t"
-			#nuclist_str = nuclist_str[:-1]
 			nuclist_str = '\t'.join([entry for entry in nuclist])
 			outline = '\t'.join(["At" + str(chr),str(pos),str(ref),str(nuclist_str)]) + "\n"
 			outfile.write(bytes(outline,"UTF-8"))
@@ -61,7 +57,7 @@ def filter_sam(sam_file, SNP_file, o_2_file):
 						skip_read = True
 						break
 				if skip_read == True: continue
-				read_name = line_split[0] # Delete me
+				#read_name = line_split[0] # Delete me
 				s_pos = int(line_split[3])
 				cigar = line_split[5]
 				cigar_pieces = recomp.findall(cigar)
@@ -84,7 +80,7 @@ def filter_sam(sam_file, SNP_file, o_2_file):
 									SNP["T"] = nuclist[3]
 									if cur_nuc in SNP and (SNP[cur_nuc] / total_nucs) >= 0.05:
 										# SNP present in >=5% of A. arenosa reads mapped to TAIR9, so consider it a valid mismap; skip read
-										print(str(cur_nuc), " (", str(ref), "): ", str(round(SNP[cur_nuc] / total_nucs,2)), "\t", str(chr), ":", str(i), "\t", str(read_name), sep='') # Delete me
+										#print(str(cur_nuc), " (", str(ref), "): ", str(round(SNP[cur_nuc] / total_nucs,2)), "\t", str(chr), ":", str(i), "\t", str(read_name), sep='') # Delete me
 										skip_read = True
 										break
 					else: # Insertion or deletion
@@ -99,7 +95,7 @@ def filter_sam(sam_file, SNP_file, o_2_file):
 									total_nucs = Pileup.sum_nucs(nuclist, True)
 									if ( int(nuclist[i][3+int(val):]) / total_nucs ) >= 0.05:
 										# Indel present in >=5% of A. arenosa reads mapped to TAIR9, so consider it a valid mismap; skip read
-										print(str(nuclist[i]), " (", str(ref), "): ", str(round(int(nuclist[i][3+int(val):]) / total_nucs,2)), str(chr), ":", str(i), "\t", str(read_name), sep='') # Delete me
+										#print(str(nuclist[i]), " (", str(ref), "): ", str(round(int(nuclist[i][3+int(val):]) / total_nucs,2)), str(chr), ":", str(i), "\t", str(read_name), sep='') # Delete me
 										skip_read = True
 										break
 					if skip_read == True:
