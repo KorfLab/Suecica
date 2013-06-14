@@ -24,9 +24,9 @@ def command_line():
 	return(pileup_file, o_1_file, sam_file, o_2_file)
 
 def arenosa_snps(pileup_file, o_1_file):
-	Aa_SNPs = Pileup.parse(pileup_file, region_list="Chr1;Chr2;Chr3;Chr4;Chr5") # Only saves SNP positions by default
+	aa_SNPs = Pileup.parse(pileup_file, region_list="Chr1;Chr2;Chr3;Chr4;Chr5") # Only saves SNP positions by default
 	with gzip.open(o_1_file, 'wb') as outfile:
-		for entry in sorted(Aa_SNPs.pileup_dict.items(), key=lambda entry: (entry[0][0], entry[0][1])):
+		for entry in sorted(aa_SNPs.pileup_dict.items(), key=lambda entry: (entry[0][0], entry[0][1])):
 			(chr, pos), [ref, nuclist] = entry
 			nuclist_str = '\t'.join([entry for entry in nuclist])
 			outline = '\t'.join(["At" + str(chr),str(pos),str(ref),str(nuclist_str)]) + "\n"
@@ -36,7 +36,7 @@ def arenosa_snps(pileup_file, o_1_file):
 def filter_sam(sam_file, SNP_file, o_2_file):
 	pattern = r"(\d+)([MSID])"
 	recomp = re.compile(pattern)
-	Aa_SNPs = Pileup.parse(SNP_file, simplified=True, only_save_SNPs=False, region_list="AtChr1;AtChr2;AtChr3;AtChr4;AtChr5")
+	aa_SNPs = Pileup.parse(SNP_file, simplified=True, only_save_SNPs=False, region_list="AtChr1;AtChr2;AtChr3;AtChr4;AtChr5")
 	if sam_file[-3:] == ".gz":
 		infile = gzip.open(sam_file, 'rb')
 	else:
@@ -68,7 +68,7 @@ def filter_sam(sam_file, SNP_file, o_2_file):
 					val = int(val)
 					if operation == "M": # A, C, T, or G
 						for i in range(current_pos, current_pos + val): # Check all nucleotides for match w/ reference
-							ref, nuclist = Aa_SNPs.PosInfo(chr, i)
+							ref, nuclist = aa_SNPs.PosInfo(chr, i)
 							if ref != -1: # Ref == -1 when there isn't an A. arenosa SNP at position (chr, i)
 								cur_nuc = nucs[i - s_pos:i - s_pos + 1]
 								if cur_nuc != ref: # Read doesn't contain reference nucleotide
@@ -84,7 +84,7 @@ def filter_sam(sam_file, SNP_file, o_2_file):
 										skip_read = True
 										break
 					else: # Insertion or deletion
-						ref, nuclist = Aa_SNPs.PosInfo(chr, i)
+						ref, nuclist = aa_SNPs.PosInfo(chr, i)
 						if ref != -1: # Ref == -1 when there isn't an A. arenosa SNP at position (chr, i)
 							if operation == "I":
 								indel_str = "+" + str(val)

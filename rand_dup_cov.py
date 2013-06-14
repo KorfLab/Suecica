@@ -1,8 +1,8 @@
 #!/usr/bin/env python3.2
 import argparse, subprocess, os, re, types
 from random import randrange, sample
-import sys; sys.path.append('/home/mattchat/Packages/'); from GenomeTools import SAM
 from sys import executable as pypath
+import SAM
 
 # RandDupCov.py creates and outputs a randomly generated read profile for a given chromosome or chromosomes. Read lengths and overall read coverage are user-specified values,
 #	  as are the number and length of duplicated regions to be randomly incorporated into the read profile. This function utilizes ART, a read simulation program,
@@ -18,60 +18,60 @@ def command_line():
                                      simulation program, which is also used in the 1000 human genomes project.")
     parser.add_argument('-sam', default="Output/HMMCovWin_RandomAtChr3Reads/RandomAtChr3Reads.sam.gz", type=str, help='The output SAM filename. (Default="Output/HMMCovWin_RandomAtChr3Reads/RandomAtChr3Reads.sam")', metavar='SAMFilename')
     parser.add_argument('-ref', default="../at9_genome.fasta", help='Reference sequence from which reads shall be simulated. (Default="../at9_genome.fasta")', metavar='ReferenceSeq')
-    parser.add_argument('-chr', default="All", help='Chromosome(s) from the reference sequence on which reads shall be simulated. (Default=Entire genome for chromosomes of format Chr\d{1,}). To simulate over >1 chromosome, comma-delimit chromosomes. E.g. -chr "Chr1,Chr3"', metavar='ReferenceChr')
-    parser.add_argument('-rl', default=34, type=int, help='Length of reads after barcode removal (default = 34 bps).', metavar='ReadLength')
-    parser.add_argument('-rc', default=2, type=float, help='Overall fold read coverage for the library (default = 2).', metavar='ReadCoverage')
-    parser.add_argument('-dn', default=3, type=int, help='Number of duplicated regions to incorporate into randomly generated read profile (default=3).', metavar='NumberofDuplications')
-    parser.add_argument('-dl', default=10000, type=int, help='The length in bps for which a duplicated region should run (default=10000).', metavar='DuplicationLength')
+    parser.add_argument('-chr', default="All", help='Chromosome(s) from the reference sequence on which reads shall be simulated. (Default=Entire genome. To simulate >1 chromosome, comma-delimit chromosomes. E.g. -chr "Chr1,Chr3"', metavar='ReferenceChr')
+    parser.add_argument('-rl', default=94, type=int, help='Length of reads after barcode removal (default = 94 bps).', metavar='ReadLength')
+    parser.add_argument('-rc', default=5, type=float, help='Overall fold read coverage for the library (default = 5).', metavar='ReadCoverage')
+    parser.add_argument('-dn', default=30, type=int, help='Number of duplicated regions to incorporate into randomly generated read profile (default=3).', metavar='NumberofDuplications')
+    parser.add_argument('-dl', default=2500, type=int, help='The length in bps for which a duplicated region should run (default=10000).', metavar='DuplicationLength')
     
     args = parser.parse_args()
     sam = args.sam
     ref = args.ref
-    chr = args.chr
-    readlen = args.rl
-    readcov = args.rc
-    dupnum = args.dn
-    duplen = args.dl
+    chromosome = args.chr
+    read_len = args.rl
+    read_cov = args.rc
+    dup_num = args.dn
+    dup_len = args.dl
     
-    return(sam, ref, chr, readlen, readcov, dupnum, duplen)
+    return(sam, ref, chromosome, read_len, read_cov, dup_num, dup_len)
 
 def get_chr(ref):
     chr_lengths = {}
-    chr = ""
+    chromosome = ""
     chr_seq = []
     with open(ref) as infile:
         for line in infile:
             linelist = line.split()
             if line[:1] == ">":
-                if chr != "":
-                    chr_lengths[chr] = ''.join(chr_seq)
-                chr = linelist[0][1:]
+                if chromosome != "":
+                    chr_lengths[chromosome] = ''.join(chr_seq)
+                chromosome = linelist[0][1:]
                 chr_seq = []
             else:
                 chr_seq.append(linelist[0])
-    chr_lengths[chr] = ''.join(chr_seq)
+    chr_lengths[chromosome] = ''.join(chr_seq)
     return(chr_lengths)
 
-def simulate_reads(ref, chr, readlen, readcov, dupnum, duplen, sam, chr_len):
+def simulate_reads(ref, chromosome, read_len, read_cov, dup_num, dup_len, sam, chr_len):
     final_SAM_fns = [] # List containing all SAM files to be combined together. First contains regular read simulation SAM file, with regional duplication SAM files added later
     chr_list = []
     pattern = "Chr\d{1,}"
     recomp = re.compile(pattern)
-    if chr == "All":
+    if chromosome == "All":
         for chr_temp in chr_len:
             match = recomp.match(chr_temp)
             if match:
                 chr_list.append(chr_temp)
     else:
-        chr_list = [entry for entry in chr.split(',')]
-    for chr in chr_list:
-        for i in range(0,len(chr_len[chr]),10000):
-            out_fn = str(sam[:-3]) + "_temp_" + str(chr) + "_" + str(i)
-            new_fasta = ">" + str(chr) + "\n" + chr_len[chr][i:i+10000]
+        chr_list = [entry for entry in chromosome.split(',')]
+    for chromosome in chr_list:
+        for i in range(0,len(chr_len[chromosome]),10000):
+            out_fn = str(sam[:-3]) + "_temp_" + str(chromosome) + "_" + str(i)
+            new_fasta = ">" + str(chromosome) + "\n" + chr_len[chromosome][i:i+10000]
             temp_fasta = "regtemp_" + str(i) + ".fasta"
             with open(temp_fasta, 'w') as outfile:
                 outfile.write(new_fasta)
-            params = ' '.join(["art_illumina.exe", "-i", str(temp_fasta), "-l", str(readlen), "-f", str(readcov), "-o", out_fn, "-sam", "-q"])
+            params = ' '.join(["art_illumina.exe", "-i", str(temp_fasta), "-l", str(read_len), "-f", str(read_cov), "-o", out_fn, "-sam", "-q"])
             #Example usage: art_illumina.exe -i ../at9_chr3.fasta -l 34 -f 2 -o Output/RandomAtReads -sam
             simulation = subprocess.Popen(params)
             simulation.wait()
@@ -87,18 +87,18 @@ def simulate_reads(ref, chr, readlen, readcov, dupnum, duplen, sam, chr_len):
             final_SAM_fns.append(new_out_fn) # Regular read profile files assigned here
 
     prev_sel = []
-    for i in range(1,dupnum+1):
+    for i in range(1,dup_num+1):
         spos = 0
         undupped_region = False
         ok_regions = 0
         while undupped_region == False:
-            chr = ''.join(sample(chr_list,1))
-            spos = randrange(0,len(chr_len[chr]))
-            epos = spos + duplen
-            if epos > len(chr_len[chr]): continue
+            chromosome = ''.join(sample(chr_list,1))
+            spos = randrange(0,len(chr_len[chromosome]))
+            epos = spos + dup_len
+            if epos > len(chr_len[chromosome]): continue
             for entry in prev_sel:
                 (c, start, end) = entry
-                if chr == c:
+                if chromosome == c:
                     if not (int(spos) >= int(start) and int(spos) <= int(end)) or (int(epos) >= int(start) and int(epos) <= int(end)):
                         # Testing to make sure that newly selected duplicated region is not within a region already selected to be duplicated
                         ok_regions += 1
@@ -108,12 +108,12 @@ def simulate_reads(ref, chr, readlen, readcov, dupnum, duplen, sam, chr_len):
                     ok_regions += 1
             if ok_regions == len(prev_sel):
                 undupped_region = True
-                prev_sel.append((chr,spos,epos))
-        new_fasta = ">" + str(chr) + "\n" + chr_len[chr][spos:epos]
+                prev_sel.append((chromosome,spos,epos))
+        new_fasta = ">" + str(chromosome) + "\n" + chr_len[chromosome][spos:epos]
         temp_fasta = "duptemp_" + str(i) + ".fasta"
         with open(temp_fasta, 'w') as outfile:
             outfile.write(new_fasta)
-        params = ' '.join(["art_illumina.exe", "-i", str(temp_fasta), "-l", str(readlen), "-f", str(readcov), "-o", str(temp_fasta[:-6]), "-sam", "-q"])
+        params = ' '.join(["art_illumina.exe", "-i", str(temp_fasta), "-l", str(read_len), "-f", str(read_cov), "-o", str(temp_fasta[:-6]), "-sam", "-q"])
         simulation = subprocess.Popen(params)
         simulation.wait()
         dup_fn = temp_fasta[:-6] + ".sam"
@@ -151,8 +151,8 @@ def simulate_reads(ref, chr, readlen, readcov, dupnum, duplen, sam, chr_len):
     final_SAM.header = sorted(final_SAM.header, key = lambda read: read[1][6:])
     final_SAM.sam_list = sorted(final_SAM.sam_list, key = lambda read: int(read[0][5:]))
     for i in range(0,len(final_SAM.header)): # Set chromosome length in header portion of SAM file to correct length (will be 10,000 in temporary simulation SAM files)
-        chr = final_SAM.header[i][1][3:]
-        final_SAM.header[i][2] = "LN:" + str(len(chr_len[chr]))
+        chromosome = final_SAM.header[i][1][3:]
+        final_SAM.header[i][2] = "LN:" + str(len(chr_len[chromosome]))
     final_SAM.output(sam[:-3])
     for file in final_SAM_fns:
         os.remove(file)
@@ -161,9 +161,9 @@ def simulate_reads(ref, chr, readlen, readcov, dupnum, duplen, sam, chr_len):
     fixSAM.wait()
     print("Duplicated regions are located at:\n")
     for entry in sorted(prev_sel, key = lambda entry:(entry[0], entry[1])):
-        (chr, spos, epos) = entry
-        print(str(chr), ":", str(spos),"-", str(epos), sep="")
+        (chromosome, spos, epos) = entry
+        print(str(chromosome), ":", str(spos),"-", str(epos), sep="")
 
-sam, ref, chr, readlen, readcov, dupnum, duplen = command_line()
+sam, ref, chromosome, read_len, read_cov, dup_num, dup_len = command_line()
 chr_len = get_chr(ref)
-simulate_reads(ref, chr, readlen, readcov, dupnum, duplen, sam, chr_len)
+simulate_reads(ref, chromosome, read_len, read_cov, dup_num, dup_len, sam, chr_len)

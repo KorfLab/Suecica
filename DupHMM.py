@@ -136,7 +136,7 @@ def command_line():
 	
 	return(mode, sam, gff, chromosome, win_list, state_cns, state_names, pois_lambda, trans_prob, t_count, outdir)
 
-def dist_to_params_mode_one(states, pois_lambda, trans_prob, t_count, hist, win, chromosome, sam, outdir):
+def dist_to_params_mode_one(states, pois_lambda, trans_prob, t_count, hist, win, chromosome, outdir):
 	# Distribution_to_parameters_file
 	# Converts per-window read count histogram with a Poisson fit to it into
 	# parameters that an HMM can utilize
@@ -190,7 +190,7 @@ def dist_to_params_mode_one(states, pois_lambda, trans_prob, t_count, hist, win,
 		outfile.write(outline)
 	return(max_value)
 
-def dist_to_params_mode_two(hist, k_cluster_count, k_loc, k_data_count, win, chromosome, sam, outdir):
+def dist_to_params_mode_two(hist, k_cluster_count, k_loc, k_data_count, win, chromosome, outdir):
 	# Distribution_to_parameters_file
 	# Converts per-window read count histogram with k-clusters into
 	# parameters that an HMM can utilize
@@ -267,12 +267,12 @@ def dist_to_params_outline_mode_one(states, trans_prob, prob_dict):
 			temp_trans = 1 if i == j else 10**trans_prob
 			outline += "\n\t" + str(states[list(states.keys())[j]]) + "\t" + str(temp_trans)
 	
-	# Part of output containing emission probabilities
+	# Emission probabilities
 	outline += "\n\nEmission Probabilities:\n"
 	for copy_num in states.keys():
 		prob_list = prob_dict[copy_num]
 		outline += str(states[copy_num])
-		outline2 = ''.join(["\t" + str(i) + "\t" + str(prob_list[i]) + "\n" for i in range(0,len(prob_dict[copy_num]))])
+		outline2 = ''.join(["\t" + str(i) + "\t" + str(prob_list[i]) + "\n" for i in range(0,len(prob_list))])
 		outline += str(outline2) + "\n"
 	return outline
 
@@ -347,7 +347,6 @@ def hmm_dup_search(mode, folder, tp_positions, chromosome, win, pois_lambda, sta
 	params = ' '.join([str(run_script), "-p", str(param_file), "-o", str(obs_file)])
 	HMMRun = subprocess.Popen(params, shell=True, stdout=subprocess.PIPE)
 	path = HMMRun.communicate()[0].decode("utf-8") # Grab path from Viterbi output
-	path = path[::-1]
 	
 	# Write path file
 	with open(path_file, 'w') as outfile:
@@ -708,7 +707,7 @@ def prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cn
 			for chromosome in chromosome_list:
 				for threshold_count in temp_t_count[win][chromosome]:
 					# Create an HMM parameter file (poisson probabilities of given # of reads in a window based on duplication status of that window)
-					threshold_count = dist_to_params_mode_one(states, singlecopy_lambda[win][chromosome], trans_prob, threshold_count, hist_dict[win][chromosome], win, chromosome, sam, outdir)
+					threshold_count = dist_to_params_mode_one(states, singlecopy_lambda[win][chromosome], trans_prob, threshold_count, hist_dict[win][chromosome], win, chromosome, outdir)
 					
 					# Run HMM using generated parameter file and observation file
 					hmm_dup_search(mode, outdir, tp_positions, chromosome, win, singlecopy_lambda[win][chromosome], states, threshold_count)
@@ -721,7 +720,7 @@ def prepare_hmm(mode, sam, tp_positions, chr_len, chromosome, win_list, state_cn
 		for win in win_list:
 			for chromosome in chromosome_list:
 				# Create an HMM parameter file (poisson probabilities of given # of reads in a window based on duplication status of that window)
-				dist_to_params_mode_two(hist_dict[win][chromosome], k_cluster_count_dict[win][chromosome], k_cluster_group_dict[win][chromosome][0], k_cluster_group_dict[win][chromosome][2], win, chromosome, sam, outdir)
+				dist_to_params_mode_two(hist_dict[win][chromosome], k_cluster_count_dict[win][chromosome], k_cluster_group_dict[win][chromosome][0], k_cluster_group_dict[win][chromosome][2], win, chromosome, outdir)
 				
 				# Run HMM using generated parameter file and observation file
 				k_cluster_group_dict_temp = k_cluster_group_dict[win][chromosome][0]
